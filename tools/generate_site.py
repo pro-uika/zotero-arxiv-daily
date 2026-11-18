@@ -96,7 +96,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>arXiv 日报 · 紫璃</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20x='12'%20y='12'%20width='76'%20height='76'%20rx='7'%20fill='none'%20stroke='%232563eb'%20stroke-width='3'%20/%3E%3Cpath%20d='M12,12%20h26%20v26'%20fill='none'%20stroke='%232563eb'%20stroke-width='3'%20stroke-linejoin='bevel'%20/%3E%3Cpath%20d='M38,12%20L12,38'%20fill='%23eef2ff'%20stroke='%232563eb'%20stroke-width='3'%20/%3E%3Cpath%20d='M26,40%20h42%20v3%20M26,48%20h34%20v3%20M26,56%20h26%20v3'%20fill='none'%20stroke='%2394a3b8'%20stroke-width='3'%20stroke-linecap='round'%20/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20x='12'%20y='12'%20width='76'%20height='76'%20rx='7'%20fill='none'%20stroke='%232563eb'%20stroke-width='3'%20/%3E%3Cpath%20d='M12,12%20h26%20v26'%20fill='none'%20stroke='%232563eb'%20stroke-width='3'%20stroke-linejoin='bevel'%20/%3E%3Cpath%20d='M38,12%20L12,38'%20fill='%23eef2ff'%20stroke='%232563eb'%20stroke-width='3'%20/%3E%3Cpath%20d='M26,40%20h42%20v3%20M26,48%20h34%20v3%20M26,56%20h26%20v3'%20fill='none'%20stroke='%2394a3b8'%20stroke-width='3'%20stroke-linecap='round'%20/%3E%3C/svg%3E?v=2">
 <style>
 :root{
   --bg:#fafbfd; --card:#ffffff; --text:#1f2937; --muted:#6b7280;
@@ -186,7 +186,7 @@ select{ width:100%; padding: 8px 10px; border-radius: 10px; border: 1px solid va
 <body>
 <header>
   <div class="header-wrap">
-    <div class="brand"><span class="emoji">🧊</span><div><div class="titlebar">arXiv 日报</div><div class="subtitle">按兴趣推荐的新论文 · 供 tailnet 自用</div></div></div>
+    <div class="brand"><svg class="logo" viewBox="0 0 100 100" width="26" height="26" aria-hidden="true" style="display:block"><rect x="10" y="10" width="80" height="80" rx="8" fill="none" stroke="currentColor" stroke-width="3.5"/><path d="M34 10 h26 v26" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><path d="M34 10 L60 36" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="bevel"/><path d="M24 46 h42 v2.5 M24 54 h34 v2.5 M24 62 h26 v2.5" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round"/></svg><div><div class="titlebar">arXiv 日报</div><div class="subtitle">按兴趣推荐的新论文 · 供 tailnet 自用</div></div></div>
     <button class="btn-theme" id="themeToggle" title="切换深色/浅色">🌓</button>
   </div>
 </header>
