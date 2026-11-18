@@ -305,7 +305,8 @@ def write_site(output_dir: Path, pages: list[dict], copy_records: list[dict]) ->
     # index.html
     (output_dir / "index.html").write_text(HTML_TEMPLATE, encoding="utf-8")
 
-    # daily index (list of dates)
+    # daily index (list of dates). Include recommendations so the frontend can
+    # render a date directly from the index without an extra per-date request.
     index = [
         {
             "date": p["date"],
@@ -314,6 +315,7 @@ def write_site(output_dir: Path, pages: list[dict], copy_records: list[dict]) ->
             "candidate_count": p["candidate_count"],
             "recommendation_count": p["recommendation_count"],
             "delivery_status": p["delivery_status"],
+            "recommendations": p["recommendations"],
         }
         for p in pages
     ]
