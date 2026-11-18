@@ -17,6 +17,7 @@ import json
 import shutil
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 DEFAULT_SOURCE = Path(__file__).resolve().parents[1] / "data" / "daily"
 DEFAULT_OUTPUT = Path("/workspace/sites/papers")
@@ -90,219 +91,406 @@ def build_page_data(records: list[dict]) -> list[dict]:
     return pages
 
 
-HTML_TEMPLATE = """<!DOCTYPE html>
+# --- 页头 logo / favicon：同一枚小图标（翻开的小册子 + 一条藕荷色书签） ---------
+# 两处共用同一组路径，只是颜色写法不同（页头走 CSS 变量，favicon 写死颜色）。
+LOGO_SHAPES = (
+    '<path d="M12 7C9.8 5.6 6.6 5.2 3.5 5.8v12.4c3.1-.6 6.3-.2 8.5 1.2 2.2-1.4 5.4-1.8 8.5-1.2V5.8C17.4 5.2 14.2 5.6 12 7Z" '
+    'fill="{wash}" stroke="{line}" stroke-width="1.5" stroke-linejoin="round"/>'
+    '<path d="M12 7v12.4" fill="none" stroke="{line}" stroke-width="1.3" stroke-linecap="round"/>'
+    '<path d="M6.2 9.6c1.3-.1 2.6.1 3.7.6M6.2 12.4c1.3-.1 2.6.1 3.7.6" fill="none" stroke="{line}" '
+    'stroke-width="1.1" stroke-linecap="round" opacity=".55"/>'
+    '<path d="M15.6 5.5v6.2l1.45-1.15 1.45 1.15V5.2" fill="{line}" stroke="{line}" stroke-width="1" stroke-linejoin="round"/>'
+)
+LOGO_LINE = "#8f7bb3"
+LOGO_WASH = "#f1ebf8"
+
+
+def logo_svg_inline() -> str:
+    shapes = LOGO_SHAPES.format(wash="var(--logo-wash)", line="var(--lilac)")
+    return (
+        '<svg class="logo" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" focusable="false">'
+        + shapes
+        + "</svg>"
+    )
+
+
+def favicon_href(version: int = 3) -> str:
+    # 版本参数写成 SVG 末尾的 XML 注释：data: URI 后直接拼 "?v=3" 会让 Chromium 解析失败，
+    # 注释在根元素之后是合法的，href 里仍带有 "?v=3"。
+    shapes = LOGO_SHAPES.format(wash=LOGO_WASH, line=LOGO_LINE)
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' + shapes + "</svg>"
+    )
+    return "data:image/svg+xml," + quote(svg, safe="/=:,;()'") + quote(f"<!--?v={version}-->", safe="/=:,;()'!-?")
+
+
+HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#efebe4">
 <title>arXiv 日报 · 紫璃</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20x='12'%20y='12'%20width='76'%20height='76'%20rx='7'%20fill='none'%20stroke='%232563eb'%20stroke-width='3'%20/%3E%3Cpath%20d='M12,12%20h26%20v26'%20fill='none'%20stroke='%232563eb'%20stroke-width='3'%20stroke-linejoin='bevel'%20/%3E%3Cpath%20d='M38,12%20L12,38'%20fill='%23eef2ff'%20stroke='%232563eb'%20stroke-width='3'%20/%3E%3Cpath%20d='M26,40%20h42%20v3%20M26,48%20h34%20v3%20M26,56%20h26%20v3'%20fill='none'%20stroke='%2394a3b8'%20stroke-width='3'%20stroke-linecap='round'%20/%3E%3C/svg%3E?v=2">
+<link rel="icon" type="image/svg+xml" href="__FAVICON__">
+<script>
+try{var t=localStorage.getItem("zp:theme");
+if(t?t==="dark":window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.setAttribute("data-theme","dark");}catch(e){}
+</script>
 <style>
 :root{
-  --bg:#fafbfd; --card:#ffffff; --text:#1f2937; --muted:#6b7280;
-  --border:#e5e7eb; --accent:#2563eb; --accent-hover:#1d4ed8;
-  --chip:#eff6ff; --chip-text:#1e40af; --shadow:0 4px 16px rgba(0,0,0,0.06);
-  --radius: 14px;
+  --desk:#ece8e1; --paper:#faf8f4; --ink:#2b2833; --soft:#5f5a6b; --faint:#837d90;
+  --rule:#e6e1d8; --lilac:#8f7bb3; --lilac-ink:#6e5a96; --lilac-wash:#f1ebf8; --logo-wash:#f1ebf8;
+  --warn:#a0636f; --edge:rgba(60,40,90,.045); --lift:0 1px 2px rgba(60,40,90,.06),0 18px 50px -18px rgba(60,40,90,.22);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Source Han Serif SC","Noto Serif CJK SC","Noto Serif SC","Songti SC","STSong","SimSun",Georgia,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Noto Sans SC","Microsoft YaHei",Roboto,sans-serif;
 }
 [data-theme="dark"]{
-  --bg:#0b1120; --card:#121a2b; --text:#f1f5f9; --muted:#94a3b8;
-  --border:#1f2a44; --accent:#60a5fa; --accent-hover:#93c5fd;
-  --chip:#173252; --chip-text:#bfdbfe; --shadow:0 4px 16px rgba(0,0,0,0.45);
+  --desk:#0d0b12; --paper:#16131d; --ink:#e4dfea; --soft:#b2abbf; --faint:#847d94;
+  --rule:#2a2535; --lilac:#a794cc; --lilac-ink:#bfaee2; --lilac-wash:#231e31; --logo-wash:#231e31;
+  --warn:#c98e9a; --edge:rgba(0,0,0,.35); --lift:0 1px 2px rgba(0,0,0,.5),0 18px 50px -18px rgba(0,0,0,.7);
 }
-* { box-sizing: border-box; }
-html, body { margin:0; padding:0; background:var(--bg); color:var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans SC", sans-serif;
-  line-height: 1.5; }
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+*{ box-sizing:border-box; }
+html{ -webkit-text-size-adjust:100%; background:var(--desk); }
+body{ margin:0; background:var(--desk); color:var(--ink); font-family:var(--sans); line-height:1.6;
+  -webkit-font-smoothing:antialiased; transition:background .3s ease,color .3s ease; }
+a{ color:inherit; text-decoration:none; }
+button,select{ font:inherit; color:inherit; }
+:focus-visible{ outline:2px solid var(--lilac); outline-offset:3px; border-radius:3px; }
 
-header{
-  position: sticky; top:0; background: var(--bg); border-bottom: 1px solid var(--border);
-  z-index: 50; backdrop-filter: saturate(180%) blur(8px);
-}
-.header-wrap{
-  max-width: 720px; margin: 0 auto; padding: 12px 16px; display: flex;
-  align-items: center; justify-content: space-between; gap: 12px;
-}
-.brand{ display:flex; align-items:center; gap:10px; font-weight: 700; font-size: 1.18rem; letter-spacing: -0.01em; }
-.brand .emoji{ font-size: 1.45rem; line-height: 1; }
-.titlebar{ font-size: 0.94rem; color: var(--muted); font-weight: 600; }
-.subtitle{ font-size: 0.8rem; color: var(--muted); }
+.sheet{ max-width:40rem; margin:0 auto; min-height:100vh; min-height:100dvh; background:var(--paper);
+  padding:0 1.5rem calc(2.5rem + env(safe-area-inset-bottom)); display:flex; flex-direction:column;
+  transition:background .3s ease; }
 
-main{ max-width: 720px; margin: 0 auto; padding: 20px 16px 90px; }
+/* 页头 */
+.masthead{ display:flex; align-items:center; justify-content:space-between; padding:1.15rem 0 .9rem; }
+.brand{ display:flex; align-items:center; gap:.6rem; font-family:var(--serif); font-size:1rem; letter-spacing:.14em; color:var(--soft); }
+.logo{ display:block; flex:none; }
+.brand small{ font-family:var(--sans); font-size:.72rem; letter-spacing:.04em; color:var(--faint); margin-left:.15rem; }
+.icon-btn{ display:inline-grid; place-items:center; width:2.5rem; height:2.5rem; margin-right:-.5rem; border:0; background:none;
+  color:var(--faint); border-radius:50%; cursor:pointer; transition:color .2s,background .2s; }
+.icon-btn:hover{ color:var(--lilac-ink); background:var(--lilac-wash); }
+.icon-btn svg{ width:19px; height:19px; display:block; }
+.icon-btn .i-sun{ display:none; }
+[data-theme="dark"] .icon-btn .i-sun{ display:block; }
+[data-theme="dark"] .icon-btn .i-moon{ display:none; }
 
-.toolbar{ display:flex; align-items:center; gap:10px; margin-bottom: 16px;
-  flex-wrap: wrap; }
-.date-pick{ flex:1; min-width: 160px; }
-select{ width:100%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border);
-  background: var(--card); color: var(--text); font-size: 0.95rem; cursor: pointer; }
-.btn-theme{ background: var(--card); border: 1px solid var(--border); color: var(--text);
-  border-radius: 10px; padding: 8px 10px; cursor: pointer; font-size: 0.92rem; }
-.btn-theme:hover{ background: var(--chip); }
+/* 每天一页：页码式日期 */
+.folio{ padding:2.4rem 0 1.4rem; }
+.folio-year{ margin:0 0 .35rem; font-size:.78rem; letter-spacing:.16em; color:var(--faint); }
+.folio-day{ margin:0; display:flex; align-items:baseline; gap:.7rem; font-family:var(--serif); font-weight:400; line-height:1; }
+.folio-day .num{ font-size:4.6rem; letter-spacing:-.02em; color:var(--ink); font-variant-numeric:lining-nums; }
+.folio-day .mon{ font-size:1.05rem; letter-spacing:.2em; color:var(--faint); }
+.stats{ margin:1rem 0 0; font-size:.78rem; color:var(--faint); letter-spacing:.03em; }
+.stats .dot{ margin:0 .45em; opacity:.6; }
+.stats .warn{ color:var(--warn); }
 
-.meta{ color: var(--muted); font-size: 0.87rem; margin-bottom: 8px; }
-.meta .ok{ color: #15803d; font-weight: 700; }
-.meta .bad{ color: #b91c1c; font-weight: 700; }
+/* 翻页条 */
+.pager{ display:flex; align-items:center; gap:.25rem; margin:1.1rem 0 0; padding:.35rem 0; border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); }
+.pager .icon-btn{ margin:0; width:2.4rem; height:2.4rem; flex:none; }
+.pager .icon-btn[disabled]{ opacity:.28; cursor:default; pointer-events:none; }
+.pick{ flex:1; min-width:0; position:relative; }
+.pick select{ width:100%; appearance:none; -webkit-appearance:none; border:0; background:transparent; text-align:center; text-align-last:center;
+  font-family:var(--serif); font-size:.95rem; letter-spacing:.06em; color:var(--soft); padding:.55rem .5rem; cursor:pointer; border-radius:6px; }
+.pick select:hover{ color:var(--lilac-ink); }
+.pick select option{ background:var(--paper); color:var(--ink); }
+.latest{ flex:none; border:0; background:none; cursor:pointer; font-size:.78rem; letter-spacing:.08em; color:var(--lilac-ink);
+  padding:.5rem .6rem; border-radius:999px; margin-right:-.4rem; }
+.latest:hover{ background:var(--lilac-wash); }
+.latest[disabled]{ visibility:hidden; }
 
-.paper-card{ background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow);
-  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
-.paper-card:hover{ transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0,0,0,0.08); border-color: var(--accent); }
-[data-theme="dark"] .paper-card:hover{ box-shadow: 0 10px 28px rgba(0,0,0,0.5); }
-.paper-card h2{ margin: 0 0 7px 0; font-size: 1.14rem; font-weight: 700; line-height: 1.4; letter-spacing: -0.01em; }
-.paper-card h2 a{ color: var(--text); }
-.paper-card h2 a:hover{ color: var(--accent); }
-.paper-meta{ font-size: 0.88rem; color: var(--muted); margin-bottom: 8px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-.chip{ display:inline-flex; align-items:center; gap:4px; padding: 2.5px 9px; border-radius: 11px;
-  background: var(--chip); color: var(--chip-text); font-size: 0.73rem; font-weight: 700; }
-.tldr{ margin: 9px 0 3px 0; font-size: 1.02rem; color: var(--text); }
-.tldr .label{ color: var(--muted); font-size: 0.82rem; font-weight: 700; }
-.whycare{ margin: 9px 0 3px 0; font-size: 0.97rem; color: var(--text); }
-.whycare .label{ color: var(--muted); font-size: 0.82rem; font-weight: 700; }
-.links{ margin-top: 12px; display:flex; gap: 8px; flex-wrap: wrap; }
-.link-btn{ display:inline-flex; align-items:center; gap:6px; padding: 7px 14px; border-radius: 10px;
-  font-size: 0.9rem; font-weight: 700; border: 1px solid var(--border);
-  background: var(--bg); color: var(--text); }
-.link-btn.arxiv{ background: var(--accent); color: #fff; border-color: var(--accent);
-  box-shadow: 0 1px 3px rgba(37,99,235,0.35); }
-.link-btn.arxiv:hover{ background: var(--accent-hover); box-shadow: 0 2px 6px rgba(37,99,235,0.45); }
-.link-btn:hover:not(.arxiv){ background: var(--chip); }
+/* 书页 */
+.page{ flex:1; padding-top:2.4rem; }
+.page.turn-next{ animation:turnNext .38s cubic-bezier(.2,.7,.2,1); }
+.page.turn-prev{ animation:turnPrev .38s cubic-bezier(.2,.7,.2,1); }
+@keyframes turnNext{ from{ opacity:0; transform:translateX(14px); } to{ opacity:1; transform:none; } }
+@keyframes turnPrev{ from{ opacity:0; transform:translateX(-14px); } to{ opacity:1; transform:none; } }
 
-.empty{ text-align:center; padding: 44px 16px; color: var(--muted); font-size: 1rem; }
-.footer{ color: var(--muted); font-size: 0.78rem; text-align:center; padding: 30px 16px 14px; border-top: 1px solid var(--border); }
+.entry + .entry{ margin-top:3.1rem; padding-top:3.1rem; position:relative; }
+.entry + .entry::before{ content:""; position:absolute; top:0; left:0; width:2.4rem; border-top:1px solid var(--rule); }
+.entry-head{ display:flex; align-items:baseline; gap:.7rem; margin-bottom:.75rem; }
+.no{ font-family:var(--serif); font-style:italic; font-size:.95rem; color:var(--lilac); letter-spacing:.04em; }
+.bucket{ font-size:.72rem; letter-spacing:.14em; color:var(--faint); }
+.entry h2{ margin:0; font-family:var(--serif); font-weight:600; font-size:clamp(1.5rem,6.2vw,1.95rem); line-height:1.28;
+  letter-spacing:-.005em; text-wrap:balance; overflow-wrap:break-word; hyphens:auto; color:var(--ink); }
+.entry h2 a{ background:linear-gradient(var(--lilac),var(--lilac)) 0 100%/0 1px no-repeat; transition:background-size .3s ease,color .2s; }
+.entry h2 a:hover{ color:var(--lilac-ink); background-size:100% 1px; }
+.byline{ margin:.95rem 0 0; font-size:.82rem; color:var(--faint); line-height:1.7; }
+.byline .sep{ margin:0 .4em; opacity:.6; }
+.cats{ font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:.76rem; letter-spacing:.02em; }
+.rel{ display:inline-flex; align-items:center; gap:.6rem; margin-top:.9rem; font-size:.76rem; color:var(--faint); letter-spacing:.04em; }
+.dots{ display:inline-flex; gap:3px; }
+.dots i{ width:5px; height:5px; border-radius:50%; background:var(--rule); display:block; }
+[data-theme="dark"] .dots i{ background:#2f2a3c; }
+.dots i.on{ background:var(--lilac); }
+
+.label{ display:block; margin:0 0 .35rem; font-size:.7rem; letter-spacing:.2em; color:var(--faint); }
+.tldr{ margin:1.5rem 0 0; }
+.tldr p{ margin:0; font-family:var(--serif); font-size:1.08rem; line-height:1.85; color:var(--ink); }
+.why{ margin:1.35rem 0 0; padding-left:1rem; border-left:2px solid color-mix(in srgb,var(--lilac) 55%,transparent); }
+.why p{ margin:0; font-size:.93rem; line-height:1.8; color:var(--soft); }
+.links{ margin-top:1.5rem; display:flex; gap:.6rem; flex-wrap:wrap; }
+.link{ display:inline-block; padding:.42rem 1.1rem; border-radius:999px; font-size:.84rem; letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--lilac) 45%,transparent); color:var(--lilac-ink); transition:background .2s,border-color .2s; }
+.link:hover{ background:var(--lilac-wash); border-color:var(--lilac); }
+.link.main{ background:var(--lilac-wash); }
+
+/* 空白页 */
+.blank{ text-align:center; padding:3.2rem 0 2rem; }
+.blank .mark{ width:34px; height:34px; margin:0 auto 1.4rem; opacity:.9; display:block; }
+.blank p{ margin:0; }
+.blank .big{ font-family:var(--serif); font-size:1.2rem; letter-spacing:.14em; color:var(--soft); }
+.blank .small{ margin-top:.7rem; font-size:.82rem; color:var(--faint); line-height:1.8; }
+
+/* 页脚 */
+.turn{ display:flex; align-items:center; justify-content:space-between; margin-top:3.4rem; padding-top:1rem; border-top:1px solid var(--rule); font-size:.82rem; color:var(--faint); }
+.turn button{ border:0; background:none; cursor:pointer; color:var(--soft); letter-spacing:.06em; padding:.55rem 0; }
+.turn button:hover{ color:var(--lilac-ink); }
+.turn button[disabled]{ opacity:.3; cursor:default; pointer-events:none; }
+.turn .no-of{ font-family:var(--serif); font-style:italic; letter-spacing:.1em; }
+.colophon{ margin:1.6rem 0 0; font-size:.72rem; line-height:1.8; color:var(--faint); text-align:center; opacity:.85; }
 
 .hidden{ display:none !important; }
-
-@media (max-width: 480px){
-  main{ padding: 14px 12px 80px; }
-  .paper-card{ padding: 14px 16px; border-radius: 12px; }
-  .paper-card h2{ font-size: 1.08rem; }
-  .header-wrap{ padding: 10px 12px; }
-  .brand{ font-size: 1.1rem; }
-  .titlebar{ font-size: 0.9rem; }
+@media (min-width:700px){
+  body{ padding:2.4rem 1.5rem 3rem; }
+  .sheet{ min-height:0; padding:0 3.4rem 2.6rem; border-radius:5px; box-shadow:var(--lift);
+    background-image:linear-gradient(90deg,var(--edge),transparent 1.6rem); }
+  .masthead{ padding-top:1.7rem; }
+  .folio{ padding-top:3rem; }
+  .folio-day .num{ font-size:5.4rem; }
+  .tldr p{ font-size:1.12rem; }
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{ animation:none !important; transition:none !important; }
 }
 </style>
 </head>
 <body>
-<header>
-  <div class="header-wrap">
-    <div class="brand"><svg class="logo" viewBox="0 0 100 100" width="26" height="26" aria-hidden="true" style="display:block"><rect x="10" y="10" width="80" height="80" rx="8" fill="none" stroke="currentColor" stroke-width="3.5"/><path d="M34 10 h26 v26" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><path d="M34 10 L60 36" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="bevel"/><path d="M24 46 h42 v2.5 M24 54 h34 v2.5 M24 62 h26 v2.5" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round"/></svg><div><div class="titlebar">arXiv 日报</div><div class="subtitle">按兴趣推荐的新论文 · 供 tailnet 自用</div></div></div>
-    <button class="btn-theme" id="themeToggle" title="切换深色/浅色">🌓</button>
+<div class="sheet">
+  <header class="masthead">
+    <div class="brand">__LOGO__<span>arXiv 日报</span></div>
+    <button class="icon-btn" id="themeToggle" type="button" title="切换深色 / 浅色" aria-label="切换深色或浅色">
+      <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2Z"/></svg>
+      <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></svg>
+    </button>
+  </header>
+
+  <section class="folio" aria-live="polite">
+    <p class="folio-year" id="folioYear"></p>
+    <h1 class="folio-day"><span class="num" id="folioNum">–</span><span class="mon" id="folioMon"></span></h1>
+    <p class="stats" id="meta">翻开中……</p>
+  </section>
+
+  <nav class="pager" aria-label="翻页">
+    <button class="icon-btn" id="prevBtn" type="button" title="前一天" aria-label="前一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
+    <div class="pick"><select id="dateSelect" aria-label="选择日期"></select></div>
+    <button class="icon-btn" id="nextBtn" type="button" title="后一天" aria-label="后一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg></button>
+    <button class="latest" id="latestBtn" type="button">最新</button>
+  </nav>
+
+  <main class="page" id="page">
+    <div id="list"></div>
+    <div class="blank hidden" id="empty"></div>
+  </main>
+
+  <div class="turn">
+    <button id="prevBtn2" type="button">‹ 前一天</button>
+    <span class="no-of" id="pageNo"></span>
+    <button id="nextBtn2" type="button">后一天 ›</button>
   </div>
-</header>
-<main>
-  <div class="toolbar">
-    <div class="date-pick">
-      <select id="dateSelect"></select>
-    </div>
-    <button class="btn-theme" id="latestBtn">最新</button>
-  </div>
-  <div class="meta" id="meta"></div>
-  <div id="list"></div>
-  <div class="empty hidden" id="empty">这天还没有推荐记录。</div>
-  <div class="footer">
-    紫璃的 arXiv 日报 · 数据来自本地运行，仅含论文元数据与摘要，不含任何密钥或个人邮箱。
-  </div>
-</main>
+  <p class="colophon">紫璃的 arXiv 日报 · 数据来自本地运行，仅含论文元数据与摘要，不含任何密钥或个人邮箱。</p>
+</div>
 <script>
 (() => {
-  const themeKey = "zp:theme";
+  const $ = id => document.getElementById(id);
   const root = document.documentElement;
-  const themeBtn = document.getElementById("themeToggle");
-  const saved = localStorage.getItem(themeKey);
-  const systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const wantDark = saved ? saved === "dark" : systemDark;
-  if (wantDark) root.setAttribute("data-theme", "dark");
-  themeBtn.addEventListener("click", () => {
+  const themeKey = "zp:theme";
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  const syncThemeColor = () => themeMeta && themeMeta.setAttribute("content", root.getAttribute("data-theme") === "dark" ? "#0d0b12" : "#ece8e1");
+  syncThemeColor();
+  $("themeToggle").addEventListener("click", () => {
     const dark = root.getAttribute("data-theme") === "dark";
     if (dark) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", "dark");
-    localStorage.setItem(themeKey, dark ? "light" : "dark");
+    try { localStorage.setItem(themeKey, dark ? "light" : "dark"); } catch (e) {}
+    syncThemeColor();
   });
 
-  const dateSelect = document.getElementById("dateSelect");
-  const latestBtn = document.getElementById("latestBtn");
-  const metaEl = document.getElementById("meta");
-  const listEl = document.getElementById("list");
-  const emptyEl = document.getElementById("empty");
+  const dateSelect = $("dateSelect"), latestBtn = $("latestBtn"), metaEl = $("meta"),
+        listEl = $("list"), emptyEl = $("empty"), pageEl = $("page");
+  const navBtns = { prev: [$("prevBtn"), $("prevBtn2")], next: [$("nextBtn"), $("nextBtn2")] };
 
-  let pages = [];
+  const BUCKETS = { direct: "直接相关", adjacent: "邻近", elegant: "雅致", contrarian: "唱反调", wildcard: "意外之喜" };
+  const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
+  const LOGO_MARK = __LOGO_JS__;
+
+  let pages = [];       // 新 → 旧
   let currentDate = null;
 
-  function esc(t){ return String(t == null ? "" : t); }
   function escHtml(t){
     return String(t == null ? "" : t)
       .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
       .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
   }
-
-  function fmtDate(iso){
-    if (!iso) return "";
-    const d = new Date(iso + "T00:00:00");
-    return d.toLocaleDateString("zh-CN", { year:"numeric", month:"long", day:"numeric" });
+  function safeUrl(u){ return /^https?:\/\//i.test(u || "") ? u : ""; }
+  function parts(iso){
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+    if (!m) return null;
+    const y = +m[1], mo = +m[2], d = +m[3];
+    return { y, mo, d, wk: WEEK[new Date(y, mo - 1, d).getDay()] };
   }
+  function fmtShort(iso){ const p = parts(iso); return p ? `${p.mo} 月 ${p.d} 日` : (iso || ""); }
 
-  function renderDateSelector(){
+  function renderSelector(){
     dateSelect.innerHTML = "";
     for (const p of pages){
       const o = document.createElement("option");
+      const n = (p.recommendations || []).length;
+      const pt = parts(p.date);
       o.value = p.date;
-      o.textContent = fmtDate(p.date) + (p.date === pages[0].date ? " （最新）" : "");
+      o.textContent = `${fmtShort(p.date)}${pt ? " · 周" + pt.wk : ""} · ${n ? n + " 篇" : "空白"}`;
       dateSelect.appendChild(o);
     }
-    dateSelect.value = pages[0] ? pages[0].date : "";
   }
 
-  function render(){
-    const page = pages.find(p => p.date === currentDate) || pages[0];
-    if (!page){ listEl.innerHTML = ""; emptyEl.classList.remove("hidden"); return; }
+  function dots(v){
+    if (v == null) return "";
+    const n = Math.max(0, Math.min(10, Math.round(Number(v)) || 0));
+    let s = "";
+    for (let i = 0; i < 10; i++) s += `<i class="${i < n ? "on" : ""}"></i>`;
+    return `<span class="rel" role="img" aria-label="相关度 ${n}/10"><span class="dots">${s}</span><span>相关度 ${n}/10</span></span>`;
+  }
 
-    emptyEl.classList.add("hidden");
-    const recs = page.recommendations || [];
-    const statusOk = page.delivery_status === "sent" || page.delivery_status === "skipped_no_email" || page.delivery_status === "skipped_empty" || page.status === "complete";
+  function entryHtml(r, i){
+    const no = String(r.rank || i + 1).padStart(2, "0");
+    const url = safeUrl(r.url), pdf = safeUrl(r.pdf_url);
+    const cats = (r.categories || []).map(escHtml).join(" · ");
+    const pub = r.published_at ? String(r.published_at).slice(0, 10) : "";
+    const bucket = r.bucket ? (BUCKETS[r.bucket] || r.bucket) : "";
+    const title = escHtml(r.title);
+    return `
+      <article class="entry">
+        <div class="entry-head"><span class="no">№ ${no}</span>${bucket ? `<span class="bucket">${escHtml(bucket)}</span>` : ""}</div>
+        <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
+        <p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>
+        ${dots(r.relevance)}
+        <div class="tldr"><span class="label">TLDR</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
+        ${r.why_care_zh ? `<div class="why"><span class="label">为何推荐</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
+        <div class="links">
+          ${url ? `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>` : ""}
+          ${pdf ? `<a class="link" href="${escHtml(pdf)}" target="_blank" rel="noopener">PDF</a>` : ""}
+        </div>
+      </article>`;
+  }
 
-    metaEl.innerHTML = `
-      <strong>${escHtml(fmtDate(page.date))}</strong>
-      ${statusOk ? '<span class="ok">· 已生成</span>' : '<span class="bad">· 状态异常 (' + escHtml(page.delivery_status || page.status) + ')</span>'}
-      · 检索 ${escHtml(page.retrieved_count ?? "-")} 篇 / 候选 ${escHtml(page.candidate_count ?? "-")} 篇 / 推荐 ${escHtml(recs.length)} 篇
-    `;
-
-    let htmlOut = "";
-    for (const r of recs){
-      const cats = (r.categories || []).map(c => `<span class="chip">${escHtml(c)}</span>`).join("");
-      const bucket = r.bucket ? `<span class="chip">${escHtml(r.bucket)}</span>` : "";
-      const rel = r.relevance != null ? `<span class="chip">相关性 ${r.relevance}/10</span>` : "";
-      const pub = r.published_at ? `· 发表 ${escHtml(r.published_at)}` : "";
-      htmlOut += `
-        <div class="paper-card">
-          <h2><a href="${escHtml(r.url)}" target="_blank" rel="noopener">${escHtml(r.title)}</a></h2>
-          <div class="paper-meta">
-            <span>作者：${escHtml(r.authors)}</span>
-            ${pub}
-            ${cats}${bucket}${rel}
-          </div>
-          <div class="tldr"><span class="label">一句 TLDR（中文）：</span>${escHtml(r.tldr_zh || "(无摘要)")}</div>
-          ${r.why_care_zh ? `<div class="whycare"><span class="label">为何推荐：</span>${escHtml(r.why_care_zh)}</div>` : ""}
-          <div class="links">
-            <a class="link-btn arxiv" href="${escHtml(r.url)}" target="_blank" rel="noopener">arXiv 摘要</a>
-            ${r.pdf_url ? `<a class="link-btn" href="${escHtml(r.pdf_url)}" target="_blank" rel="noopener">PDF</a>` : ""}
-          </div>
-        </div>`;
+  function render(dir){
+    const idx = Math.max(0, pages.findIndex(p => p.date === currentDate));
+    const page = pages[idx];
+    if (!page){
+      listEl.innerHTML = "";
+      emptyEl.innerHTML = `${LOGO_MARK}<p class="big">书页还是空的</p><p class="small">没有读到任何日报数据。</p>`;
+      emptyEl.classList.remove("hidden");
+      metaEl.textContent = "";
+      return;
     }
-    if (!recs.length) htmlOut = "<div class='empty'>当天没有推荐论文。</div>";
-    listEl.innerHTML = htmlOut;
+    currentDate = page.date;
+    const recs = page.recommendations || [];
+    const pt = parts(page.date);
+    $("folioYear").textContent = pt ? `${pt.y} 年 · 星期${pt.wk}` : "";
+    $("folioNum").textContent = pt ? pt.d : page.date;
+    $("folioMon").textContent = pt ? `${pt.mo} 月` : "";
+    document.title = `${fmtShort(page.date)} · arXiv 日报 · 紫璃`;
+
+    const failed = page.status === "failed" || page.delivery_status === "failed";
+    const okish = ["sent", "skipped_no_email", "skipped_empty"].includes(page.delivery_status) || page.status === "complete";
+    const bits = [];
+    if (page.retrieved_count != null) bits.push(`检索 ${escHtml(page.retrieved_count)}`);
+    if (page.candidate_count != null) bits.push(`候选 ${escHtml(page.candidate_count)}`);
+    bits.push(`推荐 ${recs.length}`);
+    let stat = bits.join('<span class="dot">·</span>');
+    if (failed || !okish) stat += `<span class="dot">·</span><span class="warn">状态异常（${escHtml(page.delivery_status || page.status || "未知")}）</span>`;
+    metaEl.innerHTML = stat;
+
+    if (recs.length){
+      emptyEl.classList.add("hidden");
+      listEl.innerHTML = recs.map(entryHtml).join("");
+    } else {
+      listEl.innerHTML = "";
+      const big = failed ? "这一页没能写成" : "这一页是空白的";
+      const small = failed ? "当天生成出了点问题，所以留白。" : "今天没有新论文值得翻开，<br>或者这天没有运行。";
+      emptyEl.innerHTML = `${LOGO_MARK}<p class="big">${big}</p><p class="small">${small}</p>`;
+      emptyEl.classList.remove("hidden");
+    }
+
+    dateSelect.value = page.date;
+    latestBtn.disabled = idx === 0;
+    navBtns.prev.forEach(b => b.disabled = idx >= pages.length - 1);   // 更早 = 列表后面
+    navBtns.next.forEach(b => b.disabled = idx <= 0);
+    $("pageNo").textContent = `${pages.length - idx} / ${pages.length}`;
+
+    pageEl.classList.remove("turn-next", "turn-prev");
+    if (dir){ void pageEl.offsetWidth; pageEl.classList.add(dir > 0 ? "turn-next" : "turn-prev"); }
+    try { history.replaceState(null, "", idx === 0 ? location.pathname + location.search : "#" + page.date); } catch (e) {}
   }
+
+  function go(date, dir){
+    currentDate = date;
+    render(dir);
+    window.scrollTo(0, 0);
+  }
+  function step(delta){          // delta>0：后一天（更新）；delta<0：前一天（更早）
+    const idx = pages.findIndex(p => p.date === currentDate);
+    const to = idx - delta;
+    if (to < 0 || to >= pages.length) return;
+    go(pages[to].date, delta);
+  }
+
+  navBtns.prev.forEach(b => b.addEventListener("click", () => step(-1)));
+  navBtns.next.forEach(b => b.addEventListener("click", () => step(1)));
+  dateSelect.addEventListener("change", () => {
+    const a = pages.findIndex(p => p.date === currentDate), b = pages.findIndex(p => p.date === dateSelect.value);
+    go(dateSelect.value, a > b ? 1 : -1);
+  });
+  latestBtn.addEventListener("click", () => { if (pages[0]) go(pages[0].date, 1); });
+  document.addEventListener("keydown", e => {
+    if (e.altKey || e.ctrlKey || e.metaKey || /^(SELECT|INPUT|TEXTAREA)$/.test((e.target.tagName || ""))) return;
+    if (e.key === "ArrowLeft") step(-1); else if (e.key === "ArrowRight") step(1);
+  });
+  let tx = null, ty = null;
+  document.addEventListener("touchstart", e => { const t = e.touches[0]; tx = t.clientX; ty = t.clientY; }, { passive: true });
+  document.addEventListener("touchend", e => {
+    if (tx == null) return;
+    const t = e.changedTouches[0], dx = t.clientX - tx, dy = t.clientY - ty; tx = ty = null;
+    if (Math.abs(dx) > 70 && Math.abs(dy) < 40) step(dx < 0 ? 1 : -1);   // 左滑 → 更新的一页
+  }, { passive: true });
+  window.addEventListener("hashchange", () => {
+    const h = location.hash.slice(1);
+    if (pages.some(p => p.date === h)) go(h, 0);
+  });
 
   fetch("data/daily-index.json")
     .then(r => { if (!r.ok) throw new Error("无法加载索引"); return r.json(); })
-    .then(data => { pages = data; renderDateSelector(); currentDate = pages[0] ? pages[0].date : null; render(); })
-    .catch(err => { metaEl.textContent = "加载失败：" + esc(err.message); console.error(err); });
-
-  dateSelect.addEventListener("change", () => { currentDate = dateSelect.value; render(); });
-  latestBtn.addEventListener("click", () => { currentDate = pages[0] ? pages[0].date : null; dateSelect.value = currentDate || ""; render(); });
+    .then(data => {
+      pages = (Array.isArray(data) ? data : []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      renderSelector();
+      const h = location.hash.slice(1);
+      currentDate = pages.some(p => p.date === h) ? h : (pages[0] ? pages[0].date : null);
+      render(0);
+    })
+    .catch(err => { metaEl.textContent = "加载失败：" + err.message; console.error(err); });
 })();
 </script>
 </body>
 </html>"""
+
+
+
+def render_html() -> str:
+    mark = logo_svg_inline().replace('class="logo"', 'class="mark"').replace('width="26" height="26"', 'width="34" height="34"')
+    return (
+        HTML_TEMPLATE.replace("__FAVICON__", favicon_href())
+        .replace("__LOGO_JS__", json.dumps(mark))
+        .replace("__LOGO__", logo_svg_inline())
+    )
 
 
 def write_site(output_dir: Path, pages: list[dict], copy_records: list[dict]) -> None:
@@ -311,7 +499,7 @@ def write_site(output_dir: Path, pages: list[dict], copy_records: list[dict]) ->
     data_dir.mkdir(parents=True, exist_ok=True)
 
     # index.html
-    (output_dir / "index.html").write_text(HTML_TEMPLATE, encoding="utf-8")
+    (output_dir / "index.html").write_text(render_html(), encoding="utf-8")
 
     # daily index (list of dates). Include recommendations so the frontend can
     # render a date directly from the index without an extra per-date request.
