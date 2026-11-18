@@ -52,7 +52,7 @@ executor:
   send_email: true # Whether to send results by email. Set false to run without SMTP ("no-email"/dry-run mode); the run still counts as success.
   max_paper_num: 10 # Maximum number of recommendations in the email.
   source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv','chemrxiv']
-  reranker: local # The reranker to use. Example: 'local' or 'api'
+  reranker: api # The reranker to use. Example: 'local' or 'api'
   retriever_sleep_seconds: 0.2 # Seconds to sleep between papers in each retriever (throttling). Default lowered from 1s; arXiv RSS conversion does not need per-paper throttling.
 
 research:
