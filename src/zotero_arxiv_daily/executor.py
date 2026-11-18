@@ -1,6 +1,6 @@
 from loguru import logger
 from pyzotero import zotero
-from omegaconf import DictConfig, ListConfig
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from .utils import glob_match
 from .retriever import get_retriever_cls
 from .protocol import CorpusPaper
@@ -233,11 +233,19 @@ class Executor:
         record_path = write_daily_record(record, data_dir)
         logger.info(f"Saved daily paper record to {record_path}")
 
-        should_send = bool(recommendations) or bool(self.config.executor.send_empty)
+        send_enabled = bool(OmegaConf.select(self.config.executor, "send_email", default=True))
+        should_send = send_enabled and (bool(recommendations) or bool(self.config.executor.send_empty))
         if not should_send:
-            record["delivery_status"] = "skipped_empty"
-            write_daily_record(record, data_dir)
-            logger.info("No qualifying recommendations; no email will be sent.")
+            if not send_enabled:
+                record["delivery_status"] = "skipped_no_email"
+                write_daily_record(record, data_dir)
+                logger.info(
+                    "Email sending disabled by config (no-email mode); no email sent. Run still counts as success."
+                )
+            else:
+                record["delivery_status"] = "skipped_empty"
+                write_daily_record(record, data_dir)
+                logger.info("No qualifying recommendations; no email will be sent.")
             return
 
         try:
@@ -247,7 +255,8 @@ class Executor:
             write_daily_record(record, data_dir)
             logger.info("Email sent successfully")
         except Exception as exc:
+            # SMTP failure is a delivery problem, not a pipeline failure: keep the run successful.
             record["delivery_status"] = "failed"
             record["delivery_error"] = f"{type(exc).__name__}: {exc}"
             write_daily_record(record, data_dir)
-            raise
+            logger.warning("Email sending failed; recorded and continuing without raising: {}", exc)

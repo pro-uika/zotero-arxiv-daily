@@ -5,12 +5,15 @@ from __future__ import annotations
 import hashlib
 import random
 import re
+import time as _time
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from omegaconf import OmegaConf
 from sklearn.metrics.pairwise import cosine_similarity
+from openai import OpenAI
 
 from .protocol import CorpusPaper, Paper
 
@@ -119,13 +122,63 @@ def _rank_indices(scores: np.ndarray) -> list[int]:
     return sorted(range(len(scores)), key=lambda i: (-float(scores[i]), i))
 
 
+class ApiEncoder:
+    """Embedding encoder backed by a local OpenAI-compatible service.
+
+    Calls the embeddings endpoint configured under ``reranker.api.*``
+    (base_url, key, model, batch_size). On HTTP 503 it retries a bounded
+    number of times with a short delay and then gives up -- no连环重试.
+    """
+
+    def __init__(self, config: Any):
+        api_cfg = config.reranker.api
+        self.client = OpenAI(api_key=api_cfg.key, base_url=api_cfg.base_url)
+        self.model = api_cfg.model
+        self.batch_size = int(api_cfg.batch_size or 64)
+        self.max_attempts = 3
+        self.retry_delay = 2.0
+
+    def encode(self, texts: list[str], **kwargs) -> np.ndarray:
+        del kwargs  # API encoder ignores sentence-transformers-specific kwargs
+        texts = [str(t) for t in texts]
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts), self.batch_size):
+            batch = texts[i : i + self.batch_size]
+            all_embeddings.extend(self._embed_with_retry(batch))
+        return np.asarray(all_embeddings, dtype=np.float32)
+
+    def _embed_with_retry(self, batch: list[str]) -> list[list[float]]:
+        last_exc: Exception | None = None
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                response = self.client.embeddings.create(input=batch, model=self.model)
+                return [r.embedding for r in response.data]
+            except Exception as exc:
+                last_exc = exc
+                status = getattr(exc, "status_code", None)
+                if attempt < self.max_attempts and status == 503:
+                    _time.sleep(self.retry_delay)
+                    continue
+                raise
+        # Unreachable in practice (raise inside loop), but keeps type checkers happy.
+        assert last_exc is not None
+        raise last_exc
+
+
 class CandidateGenerator:
     def __init__(self, config: Any, encoder: Any = None):
         self.config = config
         self.encoder = encoder
 
     def _get_encoder(self):
-        if self.encoder is None:
+        if self.encoder is not None:
+            return self.encoder
+        reranker = str(OmegaConf.select(self.config, "executor.reranker", default="local") or "local")
+        if reranker == "api":
+            # Use the OpenAI-compatible embedding service (reranker.api.* config
+            # actually takes effect); no local sentence-transformers model needed.
+            self.encoder = ApiEncoder(self.config)
+        else:
             from sentence_transformers import SentenceTransformer
 
             self.encoder = SentenceTransformer(
@@ -144,19 +197,26 @@ class CandidateGenerator:
         if not context:
             context = [profile] if profile.strip() else [""]
 
-        encode_kwargs = self.config.reranker.local.get("encode_kwargs", {}) or {}
-        try:
-            from omegaconf import OmegaConf
-
-            if OmegaConf.is_config(encode_kwargs):
-                encode_kwargs = OmegaConf.to_container(encode_kwargs, resolve=True)
-        except ImportError:
-            encode_kwargs = dict(encode_kwargs)
-        encode_kwargs = dict(encode_kwargs)
-        encode_kwargs.pop("show_progress_bar", None)
         encoder = self._get_encoder()
-        paper_vectors = encoder.encode(documents, show_progress_bar=True, **encode_kwargs)
-        context_vectors = encoder.encode(context, show_progress_bar=True, **encode_kwargs)
+        if isinstance(encoder, ApiEncoder):
+            # OpenAI-compatible endpoint: no sentence-transformers encode kwargs.
+            paper_vectors = np.asarray(encoder.encode(documents, show_progress_bar=True))
+            context_vectors = np.asarray(encoder.encode(context, show_progress_bar=True))
+        else:
+            encode_kwargs = self.config.reranker.local.get("encode_kwargs", {}) or {}
+            try:
+                if OmegaConf.is_config(encode_kwargs):
+                    encode_kwargs = OmegaConf.to_container(encode_kwargs, resolve=True)
+            except ImportError:
+                encode_kwargs = dict(encode_kwargs)
+            encode_kwargs = dict(encode_kwargs)
+            encode_kwargs.pop("show_progress_bar", None)
+            paper_vectors = np.asarray(
+                encoder.encode(documents, show_progress_bar=True, **encode_kwargs)
+            )
+            context_vectors = np.asarray(
+                encoder.encode(context, show_progress_bar=True, **encode_kwargs)
+            )
         paper_vectors = np.asarray(paper_vectors)
         context_vectors = np.asarray(context_vectors)
         context_similarity = cosine_similarity(paper_vectors, context_vectors)

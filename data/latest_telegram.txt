@@ -1,0 +1,9 @@
+arXiv 日报 · 2026-11-18
+
+A Compilation Model for Divergent Parallel Workloads
+一句 TLDR：提出并行调度图这一编译模型，并用可组合调度语言统一表达发散程序的控制流、数据流和并行循环变换。
+链接：https://arxiv.org/abs/2611.22183
+
+How well does graph superoptimization transfer? Adapting tensor-graph superoptimizer to a Triton-based NPU
+一句 TLDR：将Mirage张量图超优化器经Triton移植到昇腾NPU，并系统评估图级优化的跨架构可迁移性。
+链接：https://arxiv.org/abs/2611.22844

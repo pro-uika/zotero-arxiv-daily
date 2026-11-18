@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from ..protocol import Paper, RawPaperItem
 from tqdm import tqdm
 from typing import Type
@@ -12,6 +12,7 @@ class BaseRetriever(ABC):
     def __init__(self, config:DictConfig):
         self.config = config
         self.retriever_config = getattr(config.source,self.name)
+        self.sleep_seconds = float(OmegaConf.select(config.executor, "retriever_sleep_seconds", default=0.2))
 
     @abstractmethod
     def _retrieve_raw_papers(self) -> list[RawPaperItem]:
@@ -33,7 +34,7 @@ class BaseRetriever(ABC):
                 continue
             if paper is not None:
                 papers.append(paper)
-            sleep(1)
+            sleep(self.sleep_seconds)
         return papers
 
 registered_retrievers = {}
