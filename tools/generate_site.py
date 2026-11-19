@@ -158,6 +158,9 @@ a{ color:inherit; text-decoration:none; }
 button,select{ font:inherit; color:inherit; }
 :focus-visible{ outline:2px solid var(--lilac); outline-offset:3px; border-radius:3px; }
 
+.content{ flex:1; display:flex; flex-direction:column; min-width:0; }
+.side-no{ display:none; }
+.entry{ container-type:inline-size; }
 .sheet{ max-width:40rem; margin:0 auto; min-height:100vh; min-height:100dvh; background:var(--paper);
   padding:0 1.5rem calc(2.5rem + env(safe-area-inset-bottom)); display:flex; flex-direction:column;
   transition:background .3s ease; }
@@ -208,6 +211,8 @@ button,select{ font:inherit; color:inherit; }
 
 .entry + .entry{ margin-top:3.1rem; padding-top:3.1rem; position:relative; }
 .entry + .entry::before{ content:""; position:absolute; top:0; left:0; width:2.4rem; border-top:1px solid var(--rule); }
+.entry{ display:flex; flex-direction:column; }
+.entry .links{ margin-top:auto; padding-top:1.5rem; }
 .entry-head{ display:flex; align-items:baseline; gap:.7rem; margin-bottom:.75rem; }
 .no{ font-family:var(--serif); font-style:italic; font-size:.95rem; color:var(--lilac); letter-spacing:.04em; }
 .bucket{ font-size:.72rem; letter-spacing:.14em; color:var(--faint); }
@@ -260,6 +265,53 @@ button,select{ font:inherit; color:inherit; }
   .folio-day .num{ font-size:5.4rem; }
   .tldr p{ font-size:1.12rem; }
 }
+/* 桌面：左侧窄栏（日期 / 统计 / 翻页，sticky）+ 右侧论文多栏 */
+@media (min-width:900px){
+  body{ padding:2rem 2rem 2.4rem; }
+  .sheet{ max-width:84rem; min-height:calc(100vh - 4.4rem); min-height:calc(100dvh - 4.4rem); padding:0 3rem 2.4rem;
+    display:grid; grid-template-columns:15.5rem minmax(0,1fr); column-gap:0; align-items:start; flex-direction:row; }
+  .rail{ position:sticky; top:2rem; align-self:start; max-height:calc(100vh - 4rem); padding-right:2.6rem; }
+  .masthead{ padding-top:1.7rem; padding-bottom:0; }
+  .folio{ padding:3.2rem 0 0; }
+  .folio-day .num{ font-size:5.6rem; }
+  .stats{ line-height:1.9; }
+  .pager{ flex-wrap:wrap; margin-top:1.6rem; padding:.3rem 0 .4rem; border-bottom:0; }
+  .pick{ order:0; flex:1 1 100%; }
+  .pick select{ font-size:.9rem; letter-spacing:.03em; padding:.5rem 0; }
+  .pager #prevBtn{ order:1; }
+  .side-no{ display:block; order:2; flex:1; text-align:center; font-family:var(--serif); font-style:italic; font-size:.8rem; letter-spacing:.1em; color:var(--faint); }
+  .latest{ order:3; margin-right:0; }
+  .pager #nextBtn{ order:4; }
+  .content{ align-self:stretch; border-left:1px solid var(--rule); padding:0 0 0 2.6rem; margin-top:1.7rem; }
+  .page{ padding-top:1.6rem; }
+  #list{ display:grid; grid-template-columns:repeat(auto-fit,minmax(17rem,1fr)); gap:3.2rem 2.5rem; align-items:stretch; }
+  .entry + .entry{ margin-top:0; padding-top:0; }
+  .entry + .entry::before{ display:none; }
+  .entry h2{ font-size:clamp(1.28rem,5.4cqi,1.8rem); line-height:1.27; text-wrap:pretty; }
+  .tldr{ margin-top:1.25rem; }
+  .tldr p{ font-size:1.02rem; line-height:1.8; }
+  .why{ margin-top:1.1rem; }
+  .why p{ font-size:.9rem; line-height:1.75; }
+  .byline{ margin-top:.8rem; }
+  .blank{ padding:5rem 0 3rem; }
+  .turn{ display:none; }
+  .colophon{ margin-top:auto; padding-top:2.4rem; text-align:left; }
+}
+@media (min-width:900px) and (max-height:800px){
+  body{ padding-top:1.1rem; padding-bottom:1.1rem; }
+  .sheet{ min-height:calc(100vh - 2.2rem); min-height:calc(100dvh - 2.2rem); padding-bottom:1.2rem; }
+  .rail{ top:1.1rem; }
+  .masthead{ padding-top:1.2rem; }
+  .folio{ padding-top:2.2rem; }
+  .content{ margin-top:1.2rem; }
+  .page{ padding-top:1.2rem; }
+  .byline{ margin-top:.65rem; }
+  .rel{ margin-top:.7rem; }
+  .tldr{ margin-top:1rem; }
+  .why{ margin-top:.9rem; }
+  .entry .links{ padding-top:1.1rem; }
+  .colophon{ padding-top:1.2rem; }
+}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{ animation:none !important; transition:none !important; }
 }
@@ -267,6 +319,7 @@ button,select{ font:inherit; color:inherit; }
 </head>
 <body>
 <div class="sheet">
+ <aside class="rail">
   <header class="masthead">
     <div class="brand">__LOGO__<span>arXiv 日报</span></div>
     <button class="icon-btn" id="themeToggle" type="button" title="切换深色 / 浅色" aria-label="切换深色或浅色">
@@ -285,9 +338,12 @@ button,select{ font:inherit; color:inherit; }
     <button class="icon-btn" id="prevBtn" type="button" title="前一天" aria-label="前一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
     <div class="pick"><select id="dateSelect" aria-label="选择日期"></select></div>
     <button class="icon-btn" id="nextBtn" type="button" title="后一天" aria-label="后一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg></button>
+    <span class="no-of side-no" id="pageNo2"></span>
     <button class="latest" id="latestBtn" type="button">最新</button>
   </nav>
+ </aside>
 
+ <div class="content">
   <main class="page" id="page">
     <div id="list"></div>
     <div class="blank hidden" id="empty"></div>
@@ -299,6 +355,7 @@ button,select{ font:inherit; color:inherit; }
     <button id="nextBtn2" type="button">后一天 ›</button>
   </div>
   <p class="colophon">紫璃的 arXiv 日报 · 数据来自本地运行，仅含论文元数据与摘要，不含任何密钥或个人邮箱。</p>
+ </div>
 </div>
 <script>
 (() => {
@@ -425,7 +482,7 @@ button,select{ font:inherit; color:inherit; }
     latestBtn.disabled = idx === 0;
     navBtns.prev.forEach(b => b.disabled = idx >= pages.length - 1);   // 更早 = 列表后面
     navBtns.next.forEach(b => b.disabled = idx <= 0);
-    $("pageNo").textContent = `${pages.length - idx} / ${pages.length}`;
+    $("pageNo").textContent = $("pageNo2").textContent = `${pages.length - idx} / ${pages.length}`;
 
     pageEl.classList.remove("turn-next", "turn-prev");
     if (dir){ void pageEl.offsetWidth; pageEl.classList.add(dir > 0 ? "turn-next" : "turn-prev"); }
