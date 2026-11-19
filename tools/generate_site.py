@@ -47,7 +47,7 @@ def _author_list(authors) -> str:
     authors = [str(a) for a in authors]
     if len(authors) <= 3:
         return "、".join(authors)
-    return "、".join(authors[:3]) + f" 等 {len(authors)} 人"
+    return "、".join(authors[:3])
 
 
 def build_page_data(records: list[dict]) -> list[dict]:
@@ -64,6 +64,7 @@ def build_page_data(records: list[dict]) -> list[dict]:
                     "rank": item.get("rank"),
                     "title": item.get("title") or "",
                     "authors": _author_list(item.get("authors")),
+                    "author_count": len(item.get("authors") or []),
                     "categories": item.get("categories") or [],
                     "url": item.get("url") or "",
                     "pdf_url": item.get("pdf_url") or "",
@@ -78,6 +79,7 @@ def build_page_data(records: list[dict]) -> list[dict]:
                     "channel_scores": item.get("channel_scores") or {},
                 }
             )
+            recs.sort(key=lambda x: x.get("rank") or 9999)
         pages.append(
             {
                 "date": record.get("date"),
@@ -172,6 +174,7 @@ button,select{ font:inherit; color:inherit; }
 .brand{ display:flex; align-items:center; gap:.6rem; font-family:var(--serif); font-size:1rem; letter-spacing:.14em; color:var(--soft); }
 .logo{ display:block; flex:none; }
 .brand small{ font-family:var(--sans); font-size:.72rem; letter-spacing:.04em; color:var(--faint); margin-left:.15rem; }
+.masthead-controls{ display:flex; gap:.5rem; }
 .icon-btn{ display:inline-grid; place-items:center; width:2.5rem; height:2.5rem; margin-right:-.5rem; border:0; background:none;
   color:var(--faint); border-radius:50%; cursor:pointer; transition:color .2s,background .2s; }
 .icon-btn:hover{ color:var(--lilac-ink); background:var(--lilac-wash); }
@@ -351,10 +354,13 @@ button,select{ font:inherit; color:inherit; }
  <aside class="rail">
   <header class="masthead">
     <div class="brand">__LOGO__<span id="brandText">arXiv 日报</span></div>
-    <button class="icon-btn" id="themeToggle" type="button" title="切换深色 / 浅色" aria-label="切换深色或浅色">
-      <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2Z"/></svg>
-      <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></svg>
-    </button>
+    <div class="masthead-controls">
+      <button class="icon-btn" id="themeToggle" type="button" title="切换深色 / 浅色" aria-label="切换深色或浅色">
+        <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2Z"/></svg>
+        <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></svg>
+      </button>
+      <button class="lang-btn" id="langToggle" type="button" aria-label="切换中文 / 英文">中</button>
+    </div>
   </header>
 
   <section class="folio" aria-live="polite">
@@ -367,7 +373,6 @@ button,select{ font:inherit; color:inherit; }
     <button class="icon-btn" id="prevBtn" type="button" title="前一天" aria-label="前一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
     <div class="pick"><select id="dateSelect" aria-label="选择日期"></select></div>
     <button class="icon-btn" id="nextBtn" type="button" title="后一天" aria-label="后一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg></button>
-    <button class="lang-btn" id="langToggle" type="button" aria-label="切换中文 / 英文">中</button>
     <span class="no-of side-no" id="pageNo2"></span>
     <button class="latest" id="latestBtn" type="button">最新</button>
   </nav>
@@ -406,6 +411,7 @@ button,select{ font:inherit; color:inherit; }
   // ---------- 语言 ----------
   const WEEK_ZH = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEK_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const WEEK_EN_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const MONTH_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const T = {
     zh: {
@@ -424,6 +430,7 @@ button,select{ font:inherit; color:inherit; }
       emptyNoDataBig: "书页还是空的", emptyNoDataSmall: "没有读到任何日报数据。",
       footer: "紫璃的 arXiv 日报 · 数据来自本地运行，仅含论文元数据与摘要，不含任何密钥或个人邮箱。",
       year: " 年 · 星期", mon: " 月",
+      published: "发表",
       langAria: "切换中文 / 英文",
     },
     en: {
@@ -442,6 +449,7 @@ button,select{ font:inherit; color:inherit; }
       emptyNoDataBig: "The book is still empty", emptyNoDataSmall: "No daily report data has been loaded.",
       footer: "Zili's arXiv Daily · Data generated locally, containing only paper metadata and abstracts, no secrets or personal email.",
       year: " · Week ", mon: "",
+      published: "Published",
       langAria: "Switch Chinese / English",
     },
   };
@@ -459,6 +467,7 @@ button,select{ font:inherit; color:inherit; }
     if (latest) latest.textContent = tt("latest");
     const colo = $("colophon");
     if (colo) colo.textContent = tt("footer");
+    renderSelector();
     render(0);
   }
   $("langToggle").addEventListener("click", () => {
@@ -484,9 +493,10 @@ button,select{ font:inherit; color:inherit; }
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
     if (!m) return null;
     const y = +m[1], mo = +m[2], d = +m[3];
-    return { y, mo, d, wk: WEEK_ZH[new Date(y, mo - 1, d).getDay()] };
+    const date = new Date(y, mo - 1, d);
+    return { y, mo, d, wk: date.getDay() };
   }
-  function fmtShort(iso){ const p = parts(iso); return p ? `${p.mo} 月 ${p.d} 日` : (iso || ""); }
+  function fmtShort(iso){ const p = parts(iso); return p ? (lang === "en" ? `${MONTH_EN[p.mo - 1]} ${p.d}` : `${p.mo} 月 ${p.d} 日`) : (iso || ""); }
 
   // 取该论文该语言下的深读内容：
   //   en 数据优先用 en；否则用 zh；旧数据只有扁平字段，整体视为 zh。
@@ -508,7 +518,9 @@ button,select{ font:inherit; color:inherit; }
       const n = (p.recommendations || []).length;
       const pt = parts(p.date);
       o.value = p.date;
-      o.textContent = `${fmtShort(p.date)}${pt ? " · 周" + pt.wk : ""} · ${n ? n + " 篇" : "空白"}`;
+      o.textContent = lang === "en"
+        ? `${fmtShort(p.date)} · ${WEEK_EN[pt.wk]} · ${n ? n + " papers" : "empty"}`
+        : `${fmtShort(p.date)} · 周${WEEK_ZH[pt.wk]} · ${n ? n + " 篇" : "空白"}`;
       dateSelect.appendChild(o);
     }
   }
@@ -519,6 +531,13 @@ button,select{ font:inherit; color:inherit; }
     let s = "";
     for (let i = 0; i < 10; i++) s += `<i class="${i < n ? "on" : ""}"></i>`;
     return `<span class="rel" role="img" aria-label="${tt("relevance")} ${n}/10"><span class="dots">${s}</span><span>${tt("relevance")} ${n}/10</span></span>`;
+  }
+
+  function authorSuffix(r){
+    const total = r.author_count || 0;
+    if (total <= 3) return "";
+    const extra = total - 3;
+    return lang === "en" ? ` et al. (+${extra})` : ` 等 ${extra} 人`;
   }
 
   function entryHtml(r, i){
@@ -535,7 +554,7 @@ button,select{ font:inherit; color:inherit; }
         <article class="entry">
           <div class="entry-head"><span class="no">№ ${no}</span></div>
           <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
-          <p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>
+          <p class="byline">${escHtml(r.authors)}${authorSuffix(r)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `${tt("published")} ${escHtml(pub)}` : ""}</p>
           ${dots(r.relevance)}
           <div class="tldr"><span class="label">${tt("tldr")}</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
           ${r.why_care_zh ? `<div class="why"><span class="label">${tt("whyCare")}</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
@@ -546,7 +565,7 @@ button,select{ font:inherit; color:inherit; }
     const leftBody = [
       `<div class="entry-head"><span class="no">№ ${no}</span></div>`,
       `<h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>`,
-      `<p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>`,
+      `<p class="byline">${escHtml(r.authors)}${authorSuffix(r)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `${tt("published")} ${escHtml(pub)}` : ""}</p>`,
       dots(r.relevance),
       `<div class="links">${buildLinks(url, pdf)}</div>`,
       buildLesson(dr.first_lesson || []),
@@ -608,10 +627,11 @@ button,select{ font:inherit; color:inherit; }
     currentDate = page.date;
     const recs = page.recommendations || [];
     const pt = parts(page.date);
-    const weekday = lang === "en" ? WEEK_EN[pt.wk] : `星期${pt.wk}`;
-    $("folioYear").textContent = pt ? `${pt.y}${tt("year")}${weekday}` : "";
+    const weekdayZh = `星期${WEEK_ZH[pt.wk]}`;
+    const weekdayEn = WEEK_EN_FULL[pt.wk];
+    $("folioYear").textContent = pt ? (lang === "en" ? `${pt.y} · Week ${weekdayEn}` : `${pt.y} 年 · ${weekdayZh}`) : "";
     $("folioNum").textContent = pt ? pt.d : page.date;
-    $("folioMon").textContent = pt ? `${pt.mo}${tt("mon")}` : "";
+    $("folioMon").textContent = pt ? (lang === "en" ? MONTH_EN[pt.mo - 1] : `${pt.mo} 月`) : "";
     document.title = `${fmtShort(page.date)} · ${tt("brand")}`;
     root.setAttribute("data-zp-lang", lang);
 
