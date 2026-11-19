@@ -226,6 +226,7 @@ def _call_llm(api_key: str, prompt: str, max_tokens: int = 1500) -> str | None:
     )
     last_err = ""
     for attempt in range(1, MAX_RETRIES + 1):
+        is_ratelimit = False
         try:
             with urllib.request.urlopen(req, timeout=90) as r:
                 data = json.loads(r.read().decode("utf-8"))
@@ -233,9 +234,16 @@ def _call_llm(api_key: str, prompt: str, max_tokens: int = 1500) -> str | None:
             if not content:
                 raise ValueError("LLM 返回空内容")
             return content
+        except urllib.error.HTTPError as exc:
+            last_err = f"HTTP {exc.code}: {exc.reason}"
+            is_ratelimit = exc.code == 429
         except Exception as exc:
             last_err = str(exc)
-            if attempt < MAX_RETRIES:
+        if attempt < MAX_RETRIES:
+            # 限流（429）时明显放慢；其余失败间隔逐次拉长
+            if is_ratelimit:
+                time.sleep(min(60, 15 * attempt))
+            else:
                 time.sleep(5 * attempt)
     print(f"[deep_read] LLM 多次失败：{last_err}")
     return None

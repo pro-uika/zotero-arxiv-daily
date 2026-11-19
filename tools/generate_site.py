@@ -134,7 +134,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#efebe4">
-<title>arXiv 日报 · 紫璃</title>
+<title>arXiv Daily · Zili</title>
 <link rel="icon" type="image/svg+xml" href="__FAVICON__">
 <script>
 try{var t=localStorage.getItem("zp:theme");
@@ -171,7 +171,7 @@ button,select{ font:inherit; color:inherit; }
 
 /* 页头 */
 .masthead{ display:flex; align-items:center; justify-content:space-between; padding:1.15rem 0 .9rem; }
-.brand{ display:flex; align-items:center; gap:.6rem; font-family:var(--serif); font-size:1rem; letter-spacing:.14em; color:var(--soft); }
+.brand{ display:flex; align-items:center; gap:.6rem; font-family:var(--serif); font-size:1rem; letter-spacing:.14em; color:var(--soft); white-space: nowrap; }
 .logo{ display:block; flex:none; }
 .brand small{ font-family:var(--sans); font-size:.72rem; letter-spacing:.04em; color:var(--faint); margin-left:.15rem; }
 .masthead-controls{ display:flex; gap:.5rem; }
@@ -296,6 +296,8 @@ button,select{ font:inherit; color:inherit; }
     display:grid; grid-template-columns:15.5rem minmax(0,1fr); column-gap:0; align-items:start; flex-direction:row; }
   .rail{ position:sticky; top:2rem; align-self:start; max-height:calc(100vh - 4rem); padding-right:2.6rem; }
   .masthead{ padding-top:1.7rem; padding-bottom:0; }
+  /* 窄栏（rail）内：标题不换行，略收字距与字号，确保与右侧按钮同一行且不溢出 */
+  .brand{ font-size:.92rem; letter-spacing:.08em; }
   .folio{ padding:3.2rem 0 0; }
   .folio-day .num{ font-size:5.6rem; }
   .stats{ line-height:1.9; }
@@ -389,7 +391,6 @@ button,select{ font:inherit; color:inherit; }
     <span class="no-of" id="pageNo"></span>
     <button id="nextBtn2" type="button">后一天 ›</button>
   </div>
-  <p class="colophon">紫璃的 arXiv 日报 · 数据来自本地运行，仅含论文元数据与摘要，不含任何密钥或个人邮箱。</p>
  </div>
 </div>
 <script>
@@ -428,10 +429,20 @@ button,select{ font:inherit; color:inherit; }
       emptyBigFailed: "这一页没能写成", emptySmallFailed: "当天生成出了点问题，所以留白。",
       emptyBigBlank: "这一页是空白的", emptySmallBlank: "今天没有新论文值得翻开，<br>或者这天没有运行。",
       emptyNoDataBig: "书页还是空的", emptyNoDataSmall: "没有读到任何日报数据。",
-      footer: "紫璃的 arXiv 日报 · 数据来自本地运行，仅含论文元数据与摘要，不含任何密钥或个人邮箱。",
       year: " 年 · 星期", mon: " 月",
       published: "发表",
       langAria: "切换中文 / 英文",
+      themeToggle: "切换深色 / 浅色",
+      themeToggleAria: "切换深色或浅色",
+      pagerAria: "翻页",
+      prevBtn: "前一天",
+      nextBtn: "后一天",
+      dateSelectAria: "选择日期",
+      turnPrev: "‹ 前一天",
+      turnNext: "后一天 ›",
+      statusFailed: "状态异常",
+      statusUnknown: "未知",
+      noSummary: "（暂无摘要）",
     },
     en: {
       brand: "arXiv Daily",
@@ -447,10 +458,20 @@ button,select{ font:inherit; color:inherit; }
       emptyBigFailed: "This page could not be written", emptySmallFailed: "Something went wrong that day, so it is left blank.",
       emptyBigBlank: "This page is blank", emptySmallBlank: "No new papers worth opening today,<br>or no run happened that day.",
       emptyNoDataBig: "The book is still empty", emptyNoDataSmall: "No daily report data has been loaded.",
-      footer: "Zili's arXiv Daily · Data generated locally, containing only paper metadata and abstracts, no secrets or personal email.",
       year: " · Week ", mon: "",
       published: "Published",
       langAria: "Switch Chinese / English",
+      themeToggle: "Switch dark / light",
+      themeToggleAria: "Toggle dark or light mode",
+      pagerAria: "Pagination",
+      prevBtn: "Previous day",
+      nextBtn: "Next day",
+      dateSelectAria: "Select date",
+      turnPrev: "‹ Previous day",
+      turnNext: "Next day ›",
+      statusFailed: "Status error",
+      statusUnknown: "unknown",
+      noSummary: "(no summary yet)",
     },
   };
   let lang = (function(){
@@ -465,8 +486,20 @@ button,select{ font:inherit; color:inherit; }
     if (lt){ lt.textContent = lang === "zh" ? "EN" : "中"; lt.setAttribute("data-active", lang === "en" ? "1" : "0"); lt.setAttribute("aria-label", tt("langAria")); }
     const latest = $("latestBtn");
     if (latest) latest.textContent = tt("latest");
-    const colo = $("colophon");
-    if (colo) colo.textContent = tt("footer");
+    const ttBtn = $("themeToggle");
+    if (ttBtn){ ttBtn.setAttribute("title", tt("themeToggle")); ttBtn.setAttribute("aria-label", tt("themeToggleAria")); }
+    const pager = $("prevBtn") && $("nextBtn") ? document.querySelector(".pager") : null;
+    if (pager) pager.setAttribute("aria-label", tt("pagerAria"));
+    const ds = $("dateSelect");
+    if (ds) ds.setAttribute("aria-label", tt("dateSelectAria"));
+    const pv2 = $("prevBtn2"), nx2 = $("nextBtn2");
+    if (pv2) pv2.textContent = tt("turnPrev");
+    if (nx2) nx2.textContent = tt("turnNext");
+    [$("prevBtn"), $("nextBtn")].forEach((b) => {
+      if (!b) return;
+      b.setAttribute("title", b.id === "prevBtn" ? tt("prevBtn") : tt("nextBtn"));
+      b.setAttribute("aria-label", b.id === "prevBtn" ? tt("prevBtn") : tt("nextBtn"));
+    });
     renderSelector();
     render(0);
   }
@@ -556,7 +589,7 @@ button,select{ font:inherit; color:inherit; }
           <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
           <p class="byline">${escHtml(r.authors)}${authorSuffix(r)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `${tt("published")} ${escHtml(pub)}` : ""}</p>
           ${dots(r.relevance)}
-          <div class="tldr"><span class="label">${tt("tldr")}</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
+          <div class="tldr"><span class="label">${tt("tldr")}</span><p>${escHtml(r.tldr_zh || tt("noSummary"))}</p></div>
           ${r.why_care_zh ? `<div class="why"><span class="label">${tt("whyCare")}</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
           <div class="links">${buildLinks(url, pdf)}</div>
         </article>`;
@@ -642,7 +675,7 @@ button,select{ font:inherit; color:inherit; }
     if (page.candidate_count != null) bits.push(`${tt("candidates")} ${escHtml(page.candidate_count)}`);
     bits.push(`${tt("recommend")} ${recs.length}`);
     let stat = bits.join('<span class="dot">·</span>');
-    if (failed || !okish) stat += `<span class="dot">·</span><span class="warn">状态异常（${escHtml(page.delivery_status || page.status || "未知")}）</span>`;
+    if (failed || !okish) stat += `<span class="dot">·</span><span class="warn">${tt("statusFailed")}（${escHtml(page.delivery_status || page.status || tt("statusUnknown"))}）</span>`;
     metaEl.innerHTML = stat;
 
     if (recs.length){
