@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
-"""tools/deep_read.py —— 为已有每日记录补生成“深读”结构化字段。
+"""tools/deep_read.py —— 为已有每日记录补生成“深读”结构化字段（中英双语）。
 
 对每篇推荐论文：
   1. 尽量抓取 arXiv 正文引言（https://arxiv.org/html/<id>/），失败则仅据摘要；
-  2. 调用 OFM 网关 LLM 生成背景/问题、做法、结果、局限，以及“先补一课”（最多 3 个概念）；
-  3. “先补一课”读取 knowledge/profile.md：“熟”不讲、“半懂”讲到点上、“已讲过”不重复；
-  4. 新讲过的概念追加到 profile.md“已讲过”，并保持总字数上限（1500 字）；
-  5. 将 deep_read 字段写回 data/daily/YYYY-MM-DD.json，供 generate_site.py 渲染。
+  2. First pass（英文）：用英文 prompt 生成纯英文的 problem / why_now / approach / result
+     四句 + 2-3 个具体概念（term、explanation 1-2 句、compiler_link），规则与旧版一致；
+  3. Second pass（中文）：单独再调一次模型，把 first pass 的英文结果翻译成流畅简体中文，
+     并把标题、摘要、正文前若干字符作为术语与语境依据放进 prompt；专业术语在中文句子
+     里保留英文原词，其余自然中文，不逐字硬翻、不增删事实；
+  4. “先补一课”读取 knowledge/profile.md：“熟”不讲、“半懂”讲到点上、“已讲过”不重复；
+  5. 新讲过的概念追加到 profile.md“已讲过”，并保持总字数上限（1500 字）；
+  6. 将 deep_read.en / deep_read.zh 写回 data/daily/YYYY-MM-DD.json，供 generate_site.py 渲染。
+
+旧数据（只有扁平字段 problem/why_now/approach/result/...）被视为 zh，页面仍能显示。
 
 用法：
-  python tools/deep_read.py data/daily/2026-11-17.json data/daily/2026-11-18.json
+  python tools/deep_read.py data/daily/2026-11-17.json data/daily/2026-11-18.json --force
   python tools/deep_read.py --all        # 处理最新的一份每日记录
 
 设计：
   - 凭据只读：OFM_API_KEY 来自 /home/node/.dsh/.credentials.yaml，不打印、不入仓库；
-  - 并发受控（默认 2），失败重试；内容诚实，拿不到正文就只基于摘要并标注“仅据摘要”；
-  - 全部简体中文，术语保留英文。
+  - 并发受控（默认 2），失败重试、间隔逐次拉长；仍失败就保留旧结果；
+  - 内容诚实，拿不到正文就只基于摘要并标注“仅据摘要”；
+  - first pass 全英文，second pass 译成简体中文。
 """
 
 from __future__ import annotations
@@ -39,6 +46,8 @@ CREDENTIALS = Path("/home/node/.dsh/.credentials.yaml")
 PROFILE_CHAR_LIMIT = 1500
 MAX_WORKERS = 2
 MAX_RETRIES = 6
+# second pass 翻译时，作为语境依据的正文字符上限（复用现有全文截取逻辑）
+ZH_CONTEXT_CHARS = 7000
 
 # 严禁作为“先补一课”概念的过宽泛大类词（含 profile 里“半懂”的 Zotero 大类主题）。
 # 只讲论文里出现的具体术语/技术，不讲这些大类。
@@ -197,43 +206,39 @@ def fetch_arxiv_intro(paper_id: str) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------- #
-# LLM 调用
+# LLM 调用（通用，带退避重试）
 # --------------------------------------------------------------------------- #
-def build_prompt(title: str, authors: str, abstract: str, intro_text: str,
-                 profile: dict[str, str]) -> str:
-    return f"""你是一位擅长给编译体系方向博士读 arXiv 论文的助手。请基于提供的论文标题、作者、摘要与引言正文（如仅提供摘要，则据摘要如实生成，不得编造论文中没有的细节），输出一个 JSON 对象，字段：
-- problem：这篇论文在解决什么具体问题（1 句）。
-- why_now：为什么现在值得做（1 句）。
-- approach：核心做法（1-2 句）。
-- result：主要结果（1-2 句）。
-- limitation：局限性（1-2 句；文中未明确展开则写“文中未明确展开”）。
-- source：取 "full_text"（用到了正文）或 "abstract_only"（仅据摘要）。
-- first_lesson：最多 3 个用户可能不熟悉、又有助于理解本文的概念。每个为 {{concept, explain, compiler_link}}，explain 用 1-2 句简体中文，compiler_link 点明与编译器研究的关系。
-
-术语使用规则（严格遵守）：
-- 专业术语一律保留英文原文（如 scheduling language、bank conflict、superoptimization、tensor graph、lowering、tiling、fusion、covert channel、timing attack 等），绝不能只给中文译名。
-- 可在专业术语首次出现后括注很短的中文（如 "bank conflict（行地址冲突）"），或把英文术语包裹在中文句子里；其余叙述仍用简体中文。
-- 人名、系统名、数据集名、指标名保留原样，不翻译。
-
-概念选择规则（严格遵守）：
-- 只能从论文正文/摘要里出现的具体术语、技术或系统名中选（如 Triton、昇腾 NPU / Ascend 910B3、superoptimization、tensor graph、e-graph、等价饱和、backend lowering、fusion 等）。
-- 严禁选过于宽泛的大类词：AI/ML、AI 系统、编译器、计算机架构、计算机体系结构、机器学习、人工智能、深度学习、并行计算、量化等，以及 profile 中“半懂”一栏里的 Zotero 大类主题（AI 系统、AI/ML、编译器、计算机架构、材料/系统）。
-- 不得选“熟”名单里的概念；不得重复“已讲过”名单里的概念。“熟”的不讲。
-- 每篇 2-3 个概念，每个 explain 用 1-2 句简体中文（术语保留英文），compiler_link 点明与编译器研究的关系。
-
-已知用户画像（按类别）：
-【熟】{profile['熟']}
-【半懂】{profile['半懂']}
-【不懂】{profile['不懂']}
-【已讲过】{profile['已讲过']}
-
-论文：
-标题：{title}
-作者：{authors}
-摘要：{abstract}
-正文（引言/结论节选）：{intro_text}
-
-只输出 JSON，不要包含代码块标记或额外说明。"""
+def _call_llm(api_key: str, prompt: str, max_tokens: int = 1500) -> str | None:
+    """调一次 OFM 网关，返回模型文本；失败返回 None。"""
+    body = json.dumps({
+        "model": OFM_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        OFM_BASE_URL + "/chat/completions",
+        data=body,
+        headers={
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+        },
+    )
+    last_err = ""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            content = data["choices"][0]["message"]["content"]
+            if not content:
+                raise ValueError("LLM 返回空内容")
+            return content
+        except Exception as exc:
+            last_err = str(exc)
+            if attempt < MAX_RETRIES:
+                time.sleep(5 * attempt)
+    print(f"[deep_read] LLM 多次失败：{last_err}")
+    return None
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -255,6 +260,8 @@ def filter_concepts(lessons: list[dict[str, str]], profile: dict[str, str]) -> l
     """过滤第一课概念：剔除宽泛大类、已讲过/熟的概念，保留 2-3 个具体术语。"""
     taught = _norm(profile.get("已讲过", ""))
     skilled = _norm(profile.get("熟", ""))
+    taught_terms = [t for t in taught.split("\n") if t]
+    skilled_terms = [t for t in skilled.split("\n") if t]
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in lessons:
@@ -268,7 +275,9 @@ def filter_concepts(lessons: list[dict[str, str]], profile: dict[str, str]) -> l
         if any(term and term in key for term in BROAD_TERMS):
             continue
         # 剔除“熟”或“已讲过”里已有的概念（子串匹配，防止重复讲）
-        if key and (key in taught or key in skilled or any(t and t in key for t in taught.split("\n") if t) or any(t and t in key for t in skilled.split("\n") if t)):
+        if key and (key in taught or key in skilled
+                    or any(t and t in key for t in taught_terms)
+                    or any(t and t in key for t in skilled_terms)):
             continue
         seen.add(key)
         out.append({
@@ -281,54 +290,130 @@ def filter_concepts(lessons: list[dict[str, str]], profile: dict[str, str]) -> l
     return out
 
 
-def llm_deep_read(api_key: str, title: str, authors: str, abstract: str,
-                  intro_text: str, source: str, profile: dict[str, str]) -> dict[str, Any] | None:
-    prompt = build_prompt(title, authors, abstract, intro_text, profile)
-    body = json.dumps({
-        "model": OFM_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 1500,
-        "temperature": 0.2,
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        OFM_BASE_URL + "/chat/completions",
-        data=body,
-        headers={
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-        },
-    )
-    last_err = ""
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=90) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            content = data["choices"][0]["message"]["content"]
-            if not content:
-                raise ValueError("LLM 返回空内容")
-            result = _extract_json(content)
-            if result is None:
-                raise ValueError("LLM 返回未含有效 JSON")
-            result["source"] = source
-            # 规范 first_lesson：过滤宽泛大类与重复/熟概念，保留 2-3 个具体术语
-            fl = result.get("first_lesson") or []
-            if not isinstance(fl, list):
-                fl = []
-            result["first_lesson"] = filter_concepts(fl, profile)
-            return result
-        except Exception as exc:
-            last_err = str(exc)
-            if attempt < MAX_RETRIES:
-                time.sleep(5 * attempt)
-    print(f"[deep_read] LLM 失败（{title}）：{last_err}")
-    return None
+# --------------------------------------------------------------------------- #
+# Prompts
+# --------------------------------------------------------------------------- #
+def build_prompt_en(title: str, authors: str, abstract: str, intro_text: str,
+                    profile: dict[str, str]) -> str:
+    """First pass：英文，产出纯英文的 four sentences + first_lesson。"""
+    return f"""You are an assistant skilled at helping a UIUC compiler PhD read arXiv papers. Based on the paper title, authors, abstract, and full-text introduction (if only the abstract is available, generate faithfully from the abstract without inventing details not in the paper), output a JSON object with these fields:
+- problem: the specific problem this paper solves (1 sentence).
+- why_now: why it is worth doing now (1 sentence).
+- approach: the core approach (1-2 sentences).
+- result: the main results (1-2 sentences).
+- limitation: limitations (1-2 sentences; write "Not explicitly discussed in the paper" if not clearly expanded).
+- source: "full_text" (full text was used) or "abstract_only" (only the abstract).
+- first_lesson: at most 3 concepts the user may not know yet that help understand the paper. Each is {{concept, explain, compiler_link}}; explain in 1-2 English sentences, compiler_link points to the relationship with compiler research.
+
+Terminology rules (strict):
+- Keep professional terms in their English original form (e.g. scheduling language, bank conflict, superoptimization, tensor graph, lowering, tiling, fusion, covert channel, timing attack), never translate them into Chinese only.
+- Person names, system names, dataset names, and metric names are kept as-is.
+
+Concept selection rules (strict):
+- Choose only from specific terms/technologies/system names that appear in the paper's abstract or full text (e.g. Triton, superoptimization, e-graph, equality saturation, backend lowering, fusion).
+- Do NOT choose overly broad categories: AI/ML, AI, ML, AI systems, compiler, computer architecture, machine learning, artificial intelligence, deep learning, parallel computing, quantization, etc.
+- Do NOT choose concepts in the user's "skilled" list or already in "taught"; "skilled" concepts are not taught.
+- 2-3 concepts per paper.
+
+User profile (by category):
+[skilled] {profile['熟']}
+[learning] {profile['半懂']}
+[unknown] {profile['不懂']}
+[taught] {profile['已讲过']}
+
+Paper:
+Title: {title}
+Authors: {authors}
+Abstract: {abstract}
+Full text (introduction / conclusion excerpt): {intro_text}
+
+Output only JSON, no code block markers or extra explanation."""
+
+
+def build_prompt_zh(title: str, authors: str, abstract: str, intro_text: str,
+                    en_result: dict[str, Any]) -> str:
+    """Second pass：把 first pass 的英文结果翻译成流畅的简体中文。"""
+    context_intro = intro_text[:ZH_CONTEXT_CHARS] if intro_text else ""
+    return f"""You are a careful translator. Translate the following English deep-read result of an arXiv paper into fluent Simplified Chinese for a UIUC compiler PhD.
+
+Terminology and language context (paper title, abstract, and the first part of the full text):
+Title: {title}
+Authors: {authors}
+Abstract: {abstract}
+Full text (first part): {context_intro}
+
+English result to translate:
+{json.dumps(en_result, ensure_ascii=False, indent=2)}
+
+Translation requirements (strict):
+- Professional terms keep their English original form inside Chinese sentences (e.g. scheduling language, bank conflict); do not translate them into Chinese only.
+- The rest should be natural Simplified Chinese, not word-for-word translation; do not add or remove facts.
+- Keep the same JSON structure: problem, why_now, approach, result, limitation, source, first_lesson.
+- In first_lesson, keep `concept` in English (it is a term); translate `explain` and `compiler_link` into natural Chinese while keeping English terms.
+- Output only JSON, no code block markers or extra explanation."""
 
 
 # --------------------------------------------------------------------------- #
-# 单篇处理
+# 单篇处理（两 pass）
 # --------------------------------------------------------------------------- #
+def _two_pass(api_key: str, title: str, authors: str, abstract: str,
+              intro_text: str, source: str, profile: dict[str, str]) -> dict[str, Any] | None:
+    """先英文 pass，再中文翻译 pass。两 pass 都成功才返回 {en, zh}；否则返回 None（保留旧结果）。"""
+    # First pass（英文）
+    prompt_en = build_prompt_en(title, authors, abstract, intro_text, profile)
+    content_en = _call_llm(api_key, prompt_en)
+    if content_en is None:
+        return None
+    en = _extract_json(content_en)
+    if en is None:
+        print(f"[deep_read] 第一 pass 返回未含有效 JSON（{title}）")
+        return None
+    en["source"] = source
+    fl = en.get("first_lesson") or []
+    if not isinstance(fl, list):
+        fl = []
+    en["first_lesson"] = filter_concepts(fl, profile)
+
+    # Second pass（中文翻译）
+    prompt_zh = build_prompt_zh(title, authors, abstract, intro_text, en)
+    content_zh = _call_llm(api_key, prompt_zh)
+    if content_zh is None:
+        print(f"[deep_read] 第二 pass 翻译失败（{title}）")
+        return None
+    zh = _extract_json(content_zh)
+    if zh is None:
+        print(f"[deep_read] 第二 pass 返回未含有效 JSON（{title}）")
+        return None
+    zh["source"] = source
+    fl_zh = zh.get("first_lesson") or []
+    if not isinstance(fl_zh, list):
+        fl_zh = []
+    # 中文 pass 的概念保留英文 term，explain/compiler_link 已译中文；把概念统一对齐到英文 pass 的结果
+    zh_first_lesson = []
+    for i, item in enumerate(fl_zh):
+        concept = str(item.get("concept", "")).strip()
+        if not concept and i < len(en["first_lesson"]):
+            concept = en["first_lesson"][i].get("concept", "")
+        zh_first_lesson.append({
+            "concept": concept,
+            "explain": str(item.get("explain", "")).strip(),
+            "compiler_link": str(item.get("compiler_link", "")).strip(),
+        })
+    if not zh_first_lesson and en["first_lesson"]:
+        zh_first_lesson = [
+            {"concept": c.get("concept", ""), "explain": "", "compiler_link": ""}
+            for c in en["first_lesson"]
+        ]
+    zh["first_lesson"] = zh_first_lesson[:3]
+
+    return {"en": en, "zh": zh}
+
+
 def process_paper(api_key: str, rec: dict[str, Any], profile: dict[str, str]) -> tuple[dict[str, Any] | None, list[str]]:
-    """为一篇论文生成 deep_read，返回 (deep_read 或 None, 新讲过的概念)。"""
+    """为一篇论文生成 deep_read，返回 (deep_read 或 None, 新讲过的概念)。
+
+    deep_read = {"en": {...}, "zh": {...}}；两 pass 任一失败则返回 None，由调用方保留旧结果。
+    """
     paper_id = rec.get("paper_id") or ""
     title = rec.get("title") or ""
     authors = "、".join(rec.get("authors") or []) if isinstance(rec.get("authors"), list) else str(rec.get("authors") or "")
@@ -338,10 +423,16 @@ def process_paper(api_key: str, rec: dict[str, Any], profile: dict[str, str]) ->
     if source == "abstract_only":
         intro_text = abstract
 
-    result = llm_deep_read(api_key, title, authors, abstract, intro_text, source, profile)
+    result = _two_pass(api_key, title, authors, abstract, intro_text, source, profile)
+    if result is None and intro_text:
+        # 换更短的输入重试（如只用摘要 + 正文前若干字符），对之前返回空的论文更友好
+        short_text = (abstract + "\n" + intro_text[:ZH_CONTEXT_CHARS]).strip() or abstract
+        if short_text != intro_text:
+            result = _two_pass(api_key, title, authors, abstract, short_text, source, profile)
+
     taught: list[str] = []
     if result is not None:
-        taught = [item.get("concept", "") for item in (result.get("first_lesson") or []) if item.get("concept")]
+        taught = [item.get("concept", "") for item in (result["en"].get("first_lesson") or []) if item.get("concept")]
     return result, taught
 
 

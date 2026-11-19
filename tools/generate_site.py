@@ -98,7 +98,7 @@ LOGO_SHAPES = (
     '<path d="M12 7C9.8 5.6 6.6 5.2 3.5 5.8v12.4c3.1-.6 6.3-.2 8.5 1.2 2.2-1.4 5.4-1.8 8.5-1.2V5.8C17.4 5.2 14.2 5.6 12 7Z" '
     'fill="{wash}" stroke="{line}" stroke-width="1.5" stroke-linejoin="round"/>'
     '<path d="M12 7v12.4" fill="none" stroke="{line}" stroke-width="1.3" stroke-linecap="round"/>'
-    '<path d="M6.2 9.6c1.3-.1 2.6.1 3.7.6M6.2 12.4c1.3-.1 2.6.1 3.7.6" fill="none" stroke="{line}" '
+    '<path d="M6.2 9.6c1.3-.1 2.6 .1 3.7 .6M6.2 12.4c1.3-.1 2.6 .1 3.7 .6" fill="none" stroke="{line}" '
     'stroke-width="1.1" stroke-linecap="round" opacity=".55"/>'
     '<path d="M15.6 5.5v6.2l1.45-1.15 1.45 1.15V5.2" fill="{line}" stroke="{line}" stroke-width="1" stroke-linejoin="round"/>'
 )
@@ -126,7 +126,7 @@ def favicon_href(version: int = 3) -> str:
 
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-zp-lang="zh">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -137,6 +137,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <script>
 try{var t=localStorage.getItem("zp:theme");
 if(t?t==="dark":window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.setAttribute("data-theme","dark");}catch(e){}
+try{var lg=localStorage.getItem("zp:lang"); if(lg)document.documentElement.setAttribute("data-zp-lang",lg);}catch(e){}
 </script>
 <style>
 :root{
@@ -178,6 +179,13 @@ button,select{ font:inherit; color:inherit; }
 .icon-btn .i-sun{ display:none; }
 [data-theme="dark"] .icon-btn .i-sun{ display:block; }
 [data-theme="dark"] .icon-btn .i-moon{ display:none; }
+
+/* 语言切换（小号、淡紫） */
+.lang-btn{ display:inline-grid; place-items:center; width:2.35rem; height:2.35rem; border:1px solid var(--rule);
+  background:none; color:var(--faint); border-radius:6px; font-size:.72rem; font-weight:600;
+  letter-spacing:.05em; cursor:pointer; transition:color .2s,border-color .2s,background .2s; }
+.lang-btn:hover{ color:var(--lilac-ink); border-color:var(--lilac); background:var(--lilac-wash); }
+.lang-btn[data-active="1"]{ color:var(--lilac-ink); border-color:var(--lilac); background:var(--lilac-wash); }
 
 /* 每天一页：页码式日期 */
 .folio{ padding:2.4rem 0 1.4rem; }
@@ -342,7 +350,7 @@ button,select{ font:inherit; color:inherit; }
 <div class="sheet">
  <aside class="rail">
   <header class="masthead">
-    <div class="brand">__LOGO__<span>arXiv 日报</span></div>
+    <div class="brand">__LOGO__<span id="brandText">arXiv 日报</span></div>
     <button class="icon-btn" id="themeToggle" type="button" title="切换深色 / 浅色" aria-label="切换深色或浅色">
       <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2Z"/></svg>
       <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></svg>
@@ -359,6 +367,7 @@ button,select{ font:inherit; color:inherit; }
     <button class="icon-btn" id="prevBtn" type="button" title="前一天" aria-label="前一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
     <div class="pick"><select id="dateSelect" aria-label="选择日期"></select></div>
     <button class="icon-btn" id="nextBtn" type="button" title="后一天" aria-label="后一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg></button>
+    <button class="lang-btn" id="langToggle" type="button" aria-label="切换中文 / 英文">中</button>
     <span class="no-of side-no" id="pageNo2"></span>
     <button class="latest" id="latestBtn" type="button">最新</button>
   </nav>
@@ -383,6 +392,7 @@ button,select{ font:inherit; color:inherit; }
   const $ = id => document.getElementById(id);
   const root = document.documentElement;
   const themeKey = "zp:theme";
+  const langKey = "zp:lang";
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   const syncThemeColor = () => themeMeta && themeMeta.setAttribute("content", root.getAttribute("data-theme") === "dark" ? "#0d0b12" : "#ece8e1");
   syncThemeColor();
@@ -393,12 +403,73 @@ button,select{ font:inherit; color:inherit; }
     syncThemeColor();
   });
 
+  // ---------- 语言 ----------
+  const WEEK_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+  const WEEK_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const MONTH_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const T = {
+    zh: {
+      brand: "arXiv 日报",
+      latest: "最新",
+      retrieval: "检索", candidates: "候选", recommend: "推荐",
+      labelProblem: "问题", labelWhyNow: "为什么现在", labelApproach: "做法", labelResult: "结果",
+      labelWhat: "本文在说什么",
+      lessonTitle: "先补一课",
+      lessonLink: "与编译器的关系",
+      linkAbstract: "arXiv 摘要",
+      relevance: "相关度",
+      tldr: "TLDR", whyCare: "为何推荐",
+      emptyBigFailed: "这一页没能写成", emptySmallFailed: "当天生成出了点问题，所以留白。",
+      emptyBigBlank: "这一页是空白的", emptySmallBlank: "今天没有新论文值得翻开，<br>或者这天没有运行。",
+      emptyNoDataBig: "书页还是空的", emptyNoDataSmall: "没有读到任何日报数据。",
+      footer: "紫璃的 arXiv 日报 · 数据来自本地运行，仅含论文元数据与摘要，不含任何密钥或个人邮箱。",
+      year: " 年 · 星期", mon: " 月",
+      langAria: "切换中文 / 英文",
+    },
+    en: {
+      brand: "arXiv Daily",
+      latest: "Latest",
+      retrieval: "Retrieval", candidates: "Candidates", recommend: "Recommendation",
+      labelProblem: "Problem", labelWhyNow: "Why now", labelApproach: "Approach", labelResult: "Result",
+      labelWhat: "What this paper says",
+      lessonTitle: "Background primer",
+      lessonLink: "Compiler link",
+      linkAbstract: "arXiv abstract",
+      relevance: "Relevance",
+      tldr: "TLDR", whyCare: "Why this paper",
+      emptyBigFailed: "This page could not be written", emptySmallFailed: "Something went wrong that day, so it is left blank.",
+      emptyBigBlank: "This page is blank", emptySmallBlank: "No new papers worth opening today,<br>or no run happened that day.",
+      emptyNoDataBig: "The book is still empty", emptyNoDataSmall: "No daily report data has been loaded.",
+      footer: "Zili's arXiv Daily · Data generated locally, containing only paper metadata and abstracts, no secrets or personal email.",
+      year: " · Week ", mon: "",
+      langAria: "Switch Chinese / English",
+    },
+  };
+  let lang = (function(){
+    try{ return localStorage.getItem(langKey) || "zh"; }catch(e){ return "zh"; }
+  })();
+  function tt(key){ return (T[lang] && T[lang][key]) || key; }
+  function applyLang(){
+    root.setAttribute("data-zp-lang", lang);
+    const b = $("brandText");
+    if (b) b.textContent = tt("brand");
+    const lt = $("langToggle");
+    if (lt){ lt.textContent = lang === "zh" ? "EN" : "中"; lt.setAttribute("data-active", lang === "en" ? "1" : "0"); lt.setAttribute("aria-label", tt("langAria")); }
+    const latest = $("latestBtn");
+    if (latest) latest.textContent = tt("latest");
+    const colo = $("colophon");
+    if (colo) colo.textContent = tt("footer");
+    render(0);
+  }
+  $("langToggle").addEventListener("click", () => {
+    lang = lang === "zh" ? "en" : "zh";
+    try { localStorage.setItem(langKey, lang); } catch (e) {}
+    applyLang();
+  });
+
   const dateSelect = $("dateSelect"), latestBtn = $("latestBtn"), metaEl = $("meta"),
         listEl = $("list"), emptyEl = $("empty"), pageEl = $("page");
   const navBtns = { prev: [$("prevBtn"), $("prevBtn2")], next: [$("nextBtn"), $("nextBtn2")] };
-
-  const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
-  const LOGO_MARK = __LOGO_JS__;
 
   let pages = [];       // 新 → 旧
   let currentDate = null;
@@ -413,9 +484,22 @@ button,select{ font:inherit; color:inherit; }
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
     if (!m) return null;
     const y = +m[1], mo = +m[2], d = +m[3];
-    return { y, mo, d, wk: WEEK[new Date(y, mo - 1, d).getDay()] };
+    return { y, mo, d, wk: WEEK_ZH[new Date(y, mo - 1, d).getDay()] };
   }
   function fmtShort(iso){ const p = parts(iso); return p ? `${p.mo} 月 ${p.d} 日` : (iso || ""); }
+
+  // 取该论文该语言下的深读内容：
+  //   en 数据优先用 en；否则用 zh；旧数据只有扁平字段，整体视为 zh。
+  function deepReadOf(rec){
+    const dr = rec.deep_read || {};
+    if (lang === "en" && dr.en) return dr.en;
+    if (dr.zh) return dr.zh;
+    return dr; // 扁平遗留字段，按 zh 处理
+  }
+  function hasDeep(rec){
+    const dr = deepReadOf(rec);
+    return !!(dr.problem || dr.why_now || dr.approach || dr.result);
+  }
 
   function renderSelector(){
     dateSelect.innerHTML = "";
@@ -434,7 +518,7 @@ button,select{ font:inherit; color:inherit; }
     const n = Math.max(0, Math.min(10, Math.round(Number(v)) || 0));
     let s = "";
     for (let i = 0; i < 10; i++) s += `<i class="${i < n ? "on" : ""}"></i>`;
-    return `<span class="rel" role="img" aria-label="相关度 ${n}/10"><span class="dots">${s}</span><span>相关度 ${n}/10</span></span>`;
+    return `<span class="rel" role="img" aria-label="${tt("relevance")} ${n}/10"><span class="dots">${s}</span><span>${tt("relevance")} ${n}/10</span></span>`;
   }
 
   function entryHtml(r, i){
@@ -443,20 +527,18 @@ button,select{ font:inherit; color:inherit; }
     const cats = (r.categories || []).map(escHtml).join(" · ");
     const pub = r.published_at ? String(r.published_at).slice(0, 10) : "";
     const title = escHtml(r.title);
-    const dr = r.deep_read || {};
-    const hasDeep = !!(dr.problem || dr.why_now || dr.approach || dr.result);
-    const fl = (dr.first_lesson || []).filter(Boolean);
+    const dr = deepReadOf(r);
 
-    // 没有深读数据的历史日期：优雅降级，照旧显示 TLDR / 为何推荐
-    if (!hasDeep){
+    // 没有深读数据的历史日期：优雅降级，照旧显示 TLDR / 为何推荐（双语）
+    if (!hasDeep(r)){
       return `
         <article class="entry">
           <div class="entry-head"><span class="no">№ ${no}</span></div>
           <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
           <p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>
           ${dots(r.relevance)}
-          <div class="tldr"><span class="label">TLDR</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
-          ${r.why_care_zh ? `<div class="why"><span class="label">为何推荐</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
+          <div class="tldr"><span class="label">${tt("tldr")}</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
+          ${r.why_care_zh ? `<div class="why"><span class="label">${tt("whyCare")}</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
           <div class="links">${buildLinks(url, pdf)}</div>
         </article>`;
     }
@@ -467,11 +549,11 @@ button,select{ font:inherit; color:inherit; }
       `<p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>`,
       dots(r.relevance),
       `<div class="links">${buildLinks(url, pdf)}</div>`,
-      buildLesson(fl),
+      buildLesson(dr.first_lesson || []),
     ].join("");
     const fourSent = `
       <div class="four-sent">
-        <span class="label">本文在说什么</span>
+        <span class="label">${tt("labelWhat")}</span>
         <div class="ds-sent">${buildFourSentLines(dr)}</div>
       </div>`;
     return `
@@ -483,16 +565,16 @@ button,select{ font:inherit; color:inherit; }
 
   function buildFourSentLines(dr){
     const lines = [];
-    if (dr.problem) lines.push(`<div class="ds-line"><span class="ds-tag">问题</span><span class="ds-text">${escHtml(dr.problem)}</span></div>`);
-    if (dr.why_now) lines.push(`<div class="ds-line"><span class="ds-tag">为什么现在</span><span class="ds-text">${escHtml(dr.why_now)}</span></div>`);
-    if (dr.approach) lines.push(`<div class="ds-line"><span class="ds-tag">做法</span><span class="ds-text">${escHtml(dr.approach)}</span></div>`);
-    if (dr.result) lines.push(`<div class="ds-line"><span class="ds-tag">结果</span><span class="ds-text">${escHtml(dr.result)}</span></div>`);
+    if (dr.problem) lines.push(`<div class="ds-line"><span class="ds-tag">${tt("labelProblem")}</span><span class="ds-text">${escHtml(dr.problem)}</span></div>`);
+    if (dr.why_now) lines.push(`<div class="ds-line"><span class="ds-tag">${tt("labelWhyNow")}</span><span class="ds-text">${escHtml(dr.why_now)}</span></div>`);
+    if (dr.approach) lines.push(`<div class="ds-line"><span class="ds-tag">${tt("labelApproach")}</span><span class="ds-text">${escHtml(dr.approach)}</span></div>`);
+    if (dr.result) lines.push(`<div class="ds-line"><span class="ds-tag">${tt("labelResult")}</span><span class="ds-text">${escHtml(dr.result)}</span></div>`);
     return lines.join("");
   }
 
   function buildLinks(url, pdf){
     let s = "";
-    if (url) s += `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>`;
+    if (url) s += `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">${tt("linkAbstract")}</a>`;
     if (pdf) s += `<a class="link" href="${escHtml(pdf)}" target="_blank" rel="noopener">PDF</a>`;
     return s;
   }
@@ -501,13 +583,13 @@ button,select{ font:inherit; color:inherit; }
     if (!fl.length) return "";
     return `
       <details class="lesson">
-        <summary>先补一课 · ${fl.length} 个概念可能需要补一下</summary>
+        <summary>${tt("lessonTitle")} · ${fl.length} ${lang === "zh" ? "个概念可能需要补一下" : "concepts may need a primer"}</summary>
         <div class="lesson-body">
           ${fl.map(f => `
             <div class="lesson-item">
               <div class="lesson-concept">${escHtml(f.concept)}</div>
               <div class="lesson-explain">${escHtml(f.explain)}</div>
-              ${f.compiler_link ? `<div class="lesson-link">与编译器的关系：${escHtml(f.compiler_link)}</div>` : ""}
+              ${f.compiler_link ? `<div class="lesson-link">${tt("lessonLink")}: ${escHtml(f.compiler_link)}</div>` : ""}
             </div>`).join("")}
         </div>
       </details>`;
@@ -518,7 +600,7 @@ button,select{ font:inherit; color:inherit; }
     const page = pages[idx];
     if (!page){
       listEl.innerHTML = "";
-      emptyEl.innerHTML = `${LOGO_MARK}<p class="big">书页还是空的</p><p class="small">没有读到任何日报数据。</p>`;
+      emptyEl.innerHTML = `${__LOGO_JS__}<p class="big">${tt("emptyNoDataBig")}</p><p class="small">${tt("emptyNoDataSmall")}</p>`;
       emptyEl.classList.remove("hidden");
       metaEl.textContent = "";
       return;
@@ -526,17 +608,19 @@ button,select{ font:inherit; color:inherit; }
     currentDate = page.date;
     const recs = page.recommendations || [];
     const pt = parts(page.date);
-    $("folioYear").textContent = pt ? `${pt.y} 年 · 星期${pt.wk}` : "";
+    const weekday = lang === "en" ? WEEK_EN[pt.wk] : `星期${pt.wk}`;
+    $("folioYear").textContent = pt ? `${pt.y}${tt("year")}${weekday}` : "";
     $("folioNum").textContent = pt ? pt.d : page.date;
-    $("folioMon").textContent = pt ? `${pt.mo} 月` : "";
-    document.title = `${fmtShort(page.date)} · arXiv 日报 · 紫璃`;
+    $("folioMon").textContent = pt ? `${pt.mo}${tt("mon")}` : "";
+    document.title = `${fmtShort(page.date)} · ${tt("brand")}`;
+    root.setAttribute("data-zp-lang", lang);
 
     const failed = page.status === "failed" || page.delivery_status === "failed";
     const okish = ["sent", "skipped_no_email", "skipped_empty"].includes(page.delivery_status) || page.status === "complete";
     const bits = [];
-    if (page.retrieved_count != null) bits.push(`检索 ${escHtml(page.retrieved_count)}`);
-    if (page.candidate_count != null) bits.push(`候选 ${escHtml(page.candidate_count)}`);
-    bits.push(`推荐 ${recs.length}`);
+    if (page.retrieved_count != null) bits.push(`${tt("retrieval")} ${escHtml(page.retrieved_count)}`);
+    if (page.candidate_count != null) bits.push(`${tt("candidates")} ${escHtml(page.candidate_count)}`);
+    bits.push(`${tt("recommend")} ${recs.length}`);
     let stat = bits.join('<span class="dot">·</span>');
     if (failed || !okish) stat += `<span class="dot">·</span><span class="warn">状态异常（${escHtml(page.delivery_status || page.status || "未知")}）</span>`;
     metaEl.innerHTML = stat;
@@ -546,9 +630,9 @@ button,select{ font:inherit; color:inherit; }
       listEl.innerHTML = recs.map(entryHtml).join("");
     } else {
       listEl.innerHTML = "";
-      const big = failed ? "这一页没能写成" : "这一页是空白的";
-      const small = failed ? "当天生成出了点问题，所以留白。" : "今天没有新论文值得翻开，<br>或者这天没有运行。";
-      emptyEl.innerHTML = `${LOGO_MARK}<p class="big">${big}</p><p class="small">${small}</p>`;
+      const big = failed ? tt("emptyBigFailed") : tt("emptyBigBlank");
+      const small = failed ? tt("emptySmallFailed") : tt("emptySmallBlank");
+      emptyEl.innerHTML = `${__LOGO_JS__}<p class="big">${big}</p><p class="small">${small}</p>`;
       emptyEl.classList.remove("hidden");
     }
 
@@ -603,6 +687,7 @@ button,select{ font:inherit; color:inherit; }
     .then(data => {
       pages = (Array.isArray(data) ? data : []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
       renderSelector();
+      applyLang();
       const h = location.hash.slice(1);
       currentDate = pages.some(p => p.date === h) ? h : (pages[0] ? pages[0].date : null);
       render(0);
@@ -612,7 +697,6 @@ button,select{ font:inherit; color:inherit; }
 </script>
 </body>
 </html>"""
-
 
 
 def render_html() -> str:
