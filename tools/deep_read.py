@@ -242,20 +242,23 @@ def _call_llm(api_key: str, prompt: str, max_tokens: int = 1500) -> str | None:
         if attempt < MAX_RETRIES:
             # 限流（429）时明显放慢；其余失败间隔逐次拉长
             if is_ratelimit:
-                time.sleep(min(60, 15 * attempt))
+                time.sleep(min(90, 20 * attempt))
             else:
-                time.sleep(5 * attempt)
+                time.sleep(10 * attempt)
     print(f"[deep_read] LLM 多次失败：{last_err}")
     return None
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
-    start = text.find("{")
-    end = text.rfind("}")
+    # 放宽 JSON 提取：去掉 ```json / ``` 围栏，再取首个 { 到最后一个 } 宽松解析
+    cleaned = re.sub(r"```(?:json)?\s*", "", text)
+    cleaned = cleaned.replace("```", "")
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
     if start == -1 or end == -1 or end < start:
         return None
     try:
-        return json.loads(text[start:end + 1])
+        return json.loads(cleaned[start:end + 1])
     except json.JSONDecodeError:
         return None
 
@@ -444,12 +447,23 @@ def process_paper(api_key: str, rec: dict[str, Any], profile: dict[str, str]) ->
     return result, taught
 
 
-def process_file(path: Path, api_key: str, profile: dict[str, str], force: bool = False) -> dict[str, Any]:
+def _norm_pid(pid: str) -> str:
+    pid = re.sub(r"^https?://arxiv.org/(abs|html)/", "", pid or "")
+    pid = re.sub(r"v\d+$", "", pid)
+    return pid.strip()
+
+
+def process_file(path: Path, api_key: str, profile: dict[str, str], force: bool = False,
+                 workers: int = MAX_WORKERS, paper_ids: list[str] | None = None) -> dict[str, Any]:
     record = json.loads(path.read_text(encoding="utf-8"))
     recs = record.get("recommendations") or []
     taught_all: list[str] = []
 
+    wanted = {_norm_pid(p) for p in (paper_ids or [])}
+
     def work(rec):
+        if wanted and _norm_pid(rec.get("paper_id") or "") not in wanted:
+            return rec, []
         if rec.get("deep_read") and not force:
             return rec, []
         result, taught = process_paper(api_key, rec, profile)
@@ -458,7 +472,7 @@ def process_file(path: Path, api_key: str, profile: dict[str, str], force: bool 
             rec["deep_read"] = result
         return rec, taught
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+    with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = [ex.submit(work, r) for r in recs]
         for i, fut in enumerate(as_completed(futures)):
             rec, taught = fut.result()
@@ -479,16 +493,36 @@ def main(argv: list[str] | None = None) -> int:
 
     files: list[Path] = []
     force = "--force" in argv
-    if "--all" in argv:
+    workers = MAX_WORKERS
+    paper_ids: list[str] = []
+    positional: list[str] = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--workers" and i + 1 < len(argv):
+            try:
+                workers = max(1, int(argv[i + 1]))
+            except ValueError:
+                pass
+            i += 1
+        elif a == "--paper-id" and i + 1 < len(argv):
+            paper_ids.append(argv[i + 1])
+            i += 1
+        else:
+            positional.append(a)
+        i += 1
+
+    if "--all" in positional:
         files = sorted(DAILY_DIR.glob("*.json"))
         if not files:
             print("没有找到 data/daily/*.json")
             return 1
         files = [files[-1]]
     else:
-        files = [Path(p) for p in argv if p.endswith(".json")]
+        files = [Path(p) for p in positional if p.endswith(".json")]
     if not files:
         print("用法：python tools/deep_read.py data/daily/2026-11-17.json ...  (或 --all，加 --force 强制重生成)")
+        print("      可选：--workers N（并发，默认 2）；--paper-id <arXiv id> 只重跑指定论文（可重复）")
         return 1
 
     summary = []
@@ -496,7 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         if not f.exists():
             print(f"[跳过] 不存在：{f}")
             continue
-        res = process_file(f, api_key, profile, force=force)
+        res = process_file(f, api_key, profile, force=force, workers=workers, paper_ids=paper_ids)
         summary.append(res)
         print(f"[deep_read] {res['file']}：{res['n']} 篇，新讲过概念：{res['taught']}")
 
