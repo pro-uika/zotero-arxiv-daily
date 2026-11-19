@@ -74,6 +74,7 @@ def build_page_data(records: list[dict]) -> list[dict]:
                     "bucket": assessment.get("bucket") or "",
                     "tldr_zh": contribution.get("zh") or "",
                     "why_care_zh": why_care.get("zh") or "",
+                    "deep_read": item.get("deep_read") or {},
                     "channel_scores": item.get("channel_scores") or {},
                 }
             )
@@ -238,6 +239,18 @@ button,select{ font:inherit; color:inherit; }
   border:1px solid color-mix(in srgb,var(--lilac) 45%,transparent); color:var(--lilac-ink); transition:background .2s,border-color .2s; }
 .link:hover{ background:var(--lilac-wash); border-color:var(--lilac); }
 .link.main{ background:var(--lilac-wash); }
+  .ds-tag{ display:inline-block; font-size:.72rem; letter-spacing:.14em; color:var(--lilac-ink); }
+  .ds-sent{ margin:0 0 .5rem 0; font-size:.94rem; line-height:1.72; color:var(--ink); }
+  .ds-sent .ds-tag{ margin-right:.35rem; }
+  .lesson{ margin:1.1rem 0 0; border:1px solid var(--rule); border-radius:6px; background:var(--band); }
+  .lesson summary{ padding:.55rem .8rem; font-size:.84rem; letter-spacing:.08em; color:var(--lilac-ink); cursor:pointer; outline:none; list-style:none; }
+  .lesson summary::-webkit-details-marker{ display:none; }
+  .lesson summary:hover{ color:var(--lilac); }
+  .lesson[open] summary{ border-bottom:1px solid var(--rule); padding-bottom:.5rem; margin-bottom:.5rem; }
+  .lesson-body{ padding:0 .8rem .7rem; }
+  .lesson-item{ margin:.45rem 0; font-size:.9rem; line-height:1.7; color:var(--ink); }
+  .lesson-concept{ display:block; font-weight:600; color:var(--lilac-ink); letter-spacing:.08em; margin-bottom:.12rem; }
+  .lesson-link{ margin-top:.22rem; font-size:.78rem; color:var(--soft); }
 
 /* 空白页 */
 .blank{ text-align:center; padding:3.2rem 0 2rem; }
@@ -437,14 +450,50 @@ button,select{ font:inherit; color:inherit; }
         ${dots(r.relevance)}
         </div>
         <div class="e-side">
-        <div class="tldr"><span class="label">TLDR</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
-        ${r.why_care_zh ? `<div class="why"><span class="label">为何推荐</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
+        ${entrySideHtml(r)}
+        </div>
+      </article>`;
+  }
+
+  function entrySideHtml(r){
+    const dr = r.deep_read || {};
+    const hasDeep = !!(dr.problem || dr.why_now || dr.approach || dr.result);
+    const fl = (dr.first_lesson || []).filter(Boolean);
+    const url = safeUrl(r.url), pdf = safeUrl(r.pdf_url);
+    if (hasDeep){
+      const four = [];
+      if (dr.problem) four.push(`<span class="ds-tag">问题</span>${escHtml(dr.problem)}`);
+      if (dr.why_now) four.push(`<span class="ds-tag">为什么现在</span>${escHtml(dr.why_now)}`);
+      if (dr.approach) four.push(`<span class="ds-tag">做法</span>${escHtml(dr.approach)}`);
+      if (dr.result) four.push(`<span class="ds-tag">结果</span>${escHtml(dr.result)}`);
+      const lesson = fl.length ? `
+      <details class="lesson">
+        <summary>先补一课 · ${fl.length} 个概念可能需要补一下</summary>
+        <div class="lesson-body">
+          ${fl.map(f => `
+            <div class="lesson-item">
+              <div class="lesson-concept">${escHtml(f.concept)}</div>
+              <div class="lesson-explain">${escHtml(f.explain)}</div>
+              ${f.compiler_link ? `<div class="lesson-link">与编译器的关系：${escHtml(f.compiler_link)}</div>` : ""}
+            </div>`).join("")}
+        </div>
+      </details>` : "";
+      return `
+        <div class="tldr"><span class="label">本文在说什么</span><p class="ds-sent">${four.join(" ")}</p></div>
+        ${lesson}
         <div class="links">
           ${url ? `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>` : ""}
           ${pdf ? `<a class="link" href="${escHtml(pdf)}" target="_blank" rel="noopener">PDF</a>` : ""}
-        </div>
-        </div>
-      </article>`;
+        </div>`;
+    }
+    // 没有深读数据的历史日期：优雅降级，照旧显示 TLDR / 为何推荐
+    return `
+      <div class="tldr"><span class="label">TLDR</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
+      ${r.why_care_zh ? `<div class="why"><span class="label">为何推荐</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
+      <div class="links">
+        ${url ? `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>` : ""}
+        ${pdf ? `<a class="link" href="${escHtml(pdf)}" target="_blank" rel="noopener">PDF</a>` : ""}
+      </div>`;
   }
 
   function render(dir){

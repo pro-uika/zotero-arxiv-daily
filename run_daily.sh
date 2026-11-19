@@ -52,7 +52,7 @@ if [[ -z "${ZOTERO_ID:-}" || -z "${ZOTERO_KEY:-}" || -z "${OPENAI_API_KEY:-}" ]]
   exit 1
 fi
 
-echo "[1/3] 运行 zotero-arxiv-daily 全流程（不发信模式）…"
+echo "[1/4] 运行 zotero-arxiv-daily 全流程（不发信模式）…"
 PYTHONPATH=src .venv/bin/python src/zotero_arxiv_daily/main.py \
   executor.send_email=false \
   executor.reranker=api \
@@ -63,10 +63,13 @@ PYTHONPATH=src .venv/bin/python src/zotero_arxiv_daily/main.py \
 LATEST_JSON="$(ls -1 data/daily/*.json | sort | tail -1)"
 echo "最新每日记录：$LATEST_JSON"
 
-echo "[2/3] 重新生成静态页面 -> /workspace/sites/papers/"
+echo "[2/4] 为最新每日记录补生成“深读”（背景/做法/结果/局限 + 先补一课）…"
+python3 tools/deep_read.py "$LATEST_JSON" || true
+
+echo "[3/4] 重新生成静态页面 -> /workspace/sites/papers/"
 python3 tools/generate_site.py --source data/daily --output /workspace/sites/papers
 
-echo "[3/3] 生成 Telegram 精简文字 -> $TELEGRAM_OUT"
+echo "[4/4] 生成 Telegram 精简文字 -> $TELEGRAM_OUT"
 python3 - "$LATEST_JSON" "$TELEGRAM_OUT" <<'PY'
 import json, sys, pathlib
 src, out = sys.argv[1], sys.argv[2]
