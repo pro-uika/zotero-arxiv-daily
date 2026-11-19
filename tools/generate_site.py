@@ -141,14 +141,14 @@ if(t?t==="dark":window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").ma
 :root{
   --desk:#ece8e1; --paper:#faf8f4; --ink:#2b2833; --soft:#5f5a6b; --faint:#837d90;
   --rule:#e6e1d8; --lilac:#8f7bb3; --lilac-ink:#6e5a96; --lilac-wash:#f1ebf8; --logo-wash:#f1ebf8;
-  --warn:#a0636f; --edge:rgba(60,40,90,.045); --lift:0 1px 2px rgba(60,40,90,.06),0 18px 50px -18px rgba(60,40,90,.22);
+  --warn:#a0636f; --band:#f5f2f8; --edge:rgba(60,40,90,.045); --lift:0 1px 2px rgba(60,40,90,.06),0 18px 50px -18px rgba(60,40,90,.22);
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Source Han Serif SC","Noto Serif CJK SC","Noto Serif SC","Songti SC","STSong","SimSun",Georgia,"Times New Roman",serif;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Noto Sans SC","Microsoft YaHei",Roboto,sans-serif;
 }
 [data-theme="dark"]{
   --desk:#0d0b12; --paper:#16131d; --ink:#e4dfea; --soft:#b2abbf; --faint:#847d94;
   --rule:#2a2535; --lilac:#a794cc; --lilac-ink:#bfaee2; --lilac-wash:#231e31; --logo-wash:#231e31;
-  --warn:#c98e9a; --edge:rgba(0,0,0,.35); --lift:0 1px 2px rgba(0,0,0,.5),0 18px 50px -18px rgba(0,0,0,.7);
+  --warn:#c98e9a; --band:#1d1927; --edge:rgba(0,0,0,.35); --lift:0 1px 2px rgba(0,0,0,.5),0 18px 50px -18px rgba(0,0,0,.7);
 }
 *{ box-sizing:border-box; }
 html{ -webkit-text-size-adjust:100%; background:var(--desk); }
@@ -160,7 +160,7 @@ button,select{ font:inherit; color:inherit; }
 
 .content{ flex:1; display:flex; flex-direction:column; min-width:0; }
 .side-no{ display:none; }
-.entry{ container-type:inline-size; }
+.e-main{ container-type:inline-size; }
 .sheet{ max-width:40rem; margin:0 auto; min-height:100vh; min-height:100dvh; background:var(--paper);
   padding:0 1.5rem calc(2.5rem + env(safe-area-inset-bottom)); display:flex; flex-direction:column;
   transition:background .3s ease; }
@@ -211,8 +211,7 @@ button,select{ font:inherit; color:inherit; }
 
 .entry + .entry{ margin-top:3.1rem; padding-top:3.1rem; position:relative; }
 .entry + .entry::before{ content:""; position:absolute; top:0; left:0; width:2.4rem; border-top:1px solid var(--rule); }
-.entry{ display:flex; flex-direction:column; }
-.entry .links{ margin-top:auto; padding-top:1.5rem; }
+.entry .links{ margin-top:0; padding-top:1.5rem; }
 .entry-head{ display:flex; align-items:baseline; gap:.7rem; margin-bottom:.75rem; }
 .no{ font-family:var(--serif); font-style:italic; font-size:.95rem; color:var(--lilac); letter-spacing:.04em; }
 .bucket{ font-size:.72rem; letter-spacing:.14em; color:var(--faint); }
@@ -282,34 +281,39 @@ button,select{ font:inherit; color:inherit; }
   .side-no{ display:block; order:2; flex:1; text-align:center; font-family:var(--serif); font-style:italic; font-size:.8rem; letter-spacing:.1em; color:var(--faint); }
   .latest{ order:3; margin-right:0; }
   .pager #nextBtn{ order:4; }
-  .content{ align-self:stretch; border-left:1px solid var(--rule); padding:0 0 0 2.6rem; margin-top:1.7rem; }
-  .page{ padding-top:1.6rem; }
-  #list{ display:grid; grid-template-columns:repeat(auto-fit,minmax(17rem,1fr)); gap:3.2rem 2.5rem; align-items:stretch; }
-  .entry + .entry{ margin-top:0; padding-top:0; }
+  .content{ align-self:stretch; border-left:1px solid var(--rule); padding:0; margin-top:.9rem; }
+  .page{ padding-top:.4rem; }
+  /* 一行一篇：左 = 序号/标题/作者/相关度，右 = TLDR/为何推荐/链接；相邻行底色交替，铺到纸页右缘 */
+  .entry{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); column-gap:3.2rem; align-items:start;
+    padding:1.8rem 3rem 1.8rem 2.6rem; margin:0 -3rem 0 0; }
+  .entry:nth-child(even){ background:var(--band); }
+  .entry + .entry{ margin-top:0; padding-top:1.8rem; }
   .entry + .entry::before{ display:none; }
-  .entry h2{ font-size:clamp(1.28rem,5.4cqi,1.8rem); line-height:1.27; text-wrap:pretty; }
-  .tldr{ margin-top:1.25rem; }
+  .entry h2{ font-size:clamp(1.28rem,5.2cqi,1.7rem); line-height:1.27; text-wrap:pretty; }
+  .tldr{ margin-top:0; }
   .tldr p{ font-size:1.02rem; line-height:1.8; }
   .why{ margin-top:1.1rem; }
   .why p{ font-size:.9rem; line-height:1.75; }
+  .entry .links{ padding-top:1.2rem; }
   .byline{ margin-top:.8rem; }
+  .entry-head{ margin-bottom:.6rem; }
   .blank{ padding:5rem 0 3rem; }
   .turn{ display:none; }
-  .colophon{ margin-top:auto; padding-top:2.4rem; text-align:left; }
+  .colophon{ margin-top:auto; padding:2.4rem 0 0 2.6rem; text-align:left; }
 }
-@media (min-width:900px) and (max-height:800px){
+@media (min-width:900px) and (max-height:960px){
   body{ padding-top:1.1rem; padding-bottom:1.1rem; }
   .sheet{ min-height:calc(100vh - 2.2rem); min-height:calc(100dvh - 2.2rem); padding-bottom:1.2rem; }
   .rail{ top:1.1rem; }
   .masthead{ padding-top:1.2rem; }
   .folio{ padding-top:2.2rem; }
   .content{ margin-top:1.2rem; }
-  .page{ padding-top:1.2rem; }
-  .byline{ margin-top:.65rem; }
-  .rel{ margin-top:.7rem; }
-  .tldr{ margin-top:1rem; }
-  .why{ margin-top:.9rem; }
-  .entry .links{ padding-top:1.1rem; }
+  .page{ padding-top:0; }
+  .entry, .entry + .entry{ padding-top:1.5rem; padding-bottom:1.5rem; }
+  .byline{ margin-top:.6rem; }
+  .rel{ margin-top:.6rem; }
+  .why{ margin-top:.85rem; }
+  .entry .links{ padding-top:.9rem; }
   .colophon{ padding-top:1.2rem; }
 }
 @media (prefers-reduced-motion:reduce){
@@ -426,15 +430,19 @@ button,select{ font:inherit; color:inherit; }
     const title = escHtml(r.title);
     return `
       <article class="entry">
+        <div class="e-main">
         <div class="entry-head"><span class="no">№ ${no}</span>${bucket ? `<span class="bucket">${escHtml(bucket)}</span>` : ""}</div>
         <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
         <p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>
         ${dots(r.relevance)}
+        </div>
+        <div class="e-side">
         <div class="tldr"><span class="label">TLDR</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
         ${r.why_care_zh ? `<div class="why"><span class="label">为何推荐</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
         <div class="links">
           ${url ? `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>` : ""}
           ${pdf ? `<a class="link" href="${escHtml(pdf)}" target="_blank" rel="noopener">PDF</a>` : ""}
+        </div>
         </div>
       </article>`;
   }
