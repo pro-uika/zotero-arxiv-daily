@@ -300,6 +300,9 @@ button,select{ font:inherit; color:inherit; }
   /* 一行一篇：左 = 序号/标题/作者/相关度，右 = TLDR/为何推荐/链接；相邻行底色交替，铺到纸页右缘 */
   .entry{ display:grid; grid-template-columns:minmax(0,26rem) minmax(0,1fr); column-gap:3.2rem; align-items:start;
     padding:1.8rem 3rem 1.8rem 2.6rem; margin:0 -3rem 0 0; }
+  /* 桌面两栏：左 = 标题/作者/相关度 + 摘要按钮 + 先补一课；右 = 四句 */
+  .entry > .entry-head, .entry > h2, .entry > .byline, .entry > .rel, .entry > .links, .entry > .tldr, .entry > .why, .entry > details.lesson{ grid-column: 1; }
+  .entry > .four-sent{ grid-column: 2; grid-row: 1 / -1; align-self: start; }
   .entry:nth-child(even){ background:var(--band); }
   .entry + .entry{ margin-top:0; padding-top:1.8rem; }
   .entry + .entry::before{ display:none; }
@@ -394,7 +397,6 @@ button,select{ font:inherit; color:inherit; }
         listEl = $("list"), emptyEl = $("empty"), pageEl = $("page");
   const navBtns = { prev: [$("prevBtn"), $("prevBtn2")], next: [$("nextBtn"), $("nextBtn2")] };
 
-  const BUCKETS = { direct: "直接相关", adjacent: "邻近", elegant: "雅致", contrarian: "唱反调", wildcard: "意外之喜" };
   const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
   const LOGO_MARK = __LOGO_JS__;
 
@@ -440,34 +442,62 @@ button,select{ font:inherit; color:inherit; }
     const url = safeUrl(r.url), pdf = safeUrl(r.pdf_url);
     const cats = (r.categories || []).map(escHtml).join(" · ");
     const pub = r.published_at ? String(r.published_at).slice(0, 10) : "";
-    const bucket = r.bucket ? (BUCKETS[r.bucket] || r.bucket) : "";
     const title = escHtml(r.title);
-    return `
-      <article class="entry">
-        <div class="e-main">
-        <div class="entry-head"><span class="no">№ ${no}</span>${bucket ? `<span class="bucket">${escHtml(bucket)}</span>` : ""}</div>
-        <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
-        <p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>
-        ${dots(r.relevance)}
-        </div>
-        <div class="e-side">
-        ${entrySideHtml(r)}
-        </div>
-      </article>`;
-  }
-
-  function entrySideHtml(r){
     const dr = r.deep_read || {};
     const hasDeep = !!(dr.problem || dr.why_now || dr.approach || dr.result);
     const fl = (dr.first_lesson || []).filter(Boolean);
-    const url = safeUrl(r.url), pdf = safeUrl(r.pdf_url);
-    if (hasDeep){
-      const lines = [];
-      if (dr.problem) lines.push(`<div class="ds-line"><span class="ds-tag">问题</span><span class="ds-text">${escHtml(dr.problem)}</span></div>`);
-      if (dr.why_now) lines.push(`<div class="ds-line"><span class="ds-tag">为什么现在</span><span class="ds-text">${escHtml(dr.why_now)}</span></div>`);
-      if (dr.approach) lines.push(`<div class="ds-line"><span class="ds-tag">做法</span><span class="ds-text">${escHtml(dr.approach)}</span></div>`);
-      if (dr.result) lines.push(`<div class="ds-line"><span class="ds-tag">结果</span><span class="ds-text">${escHtml(dr.result)}</span></div>`);
-      const lesson = fl.length ? `
+
+    // 没有深读数据的历史日期：优雅降级，照旧显示 TLDR / 为何推荐
+    if (!hasDeep){
+      return `
+        <article class="entry">
+          <div class="entry-head"><span class="no">№ ${no}</span></div>
+          <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
+          <p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>
+          ${dots(r.relevance)}
+          <div class="tldr"><span class="label">TLDR</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
+          ${r.why_care_zh ? `<div class="why"><span class="label">为何推荐</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
+          <div class="links">${buildLinks(url, pdf)}</div>
+        </article>`;
+    }
+
+    const fourSent = `
+      <div class="four-sent">
+        <span class="label">本文在说什么</span>
+        <div class="ds-sent">${buildFourSentLines(dr)}</div>
+      </div>`;
+    const lesson = buildLesson(fl);
+    return `
+      <article class="entry">
+        <div class="entry-head"><span class="no">№ ${no}</span></div>
+        <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
+        <p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>
+        ${dots(r.relevance)}
+        ${fourSent}
+        <div class="links">${buildLinks(url, pdf)}</div>
+        ${lesson}
+      </article>`;
+  }
+
+  function buildFourSentLines(dr){
+    const lines = [];
+    if (dr.problem) lines.push(`<div class="ds-line"><span class="ds-tag">问题</span><span class="ds-text">${escHtml(dr.problem)}</span></div>`);
+    if (dr.why_now) lines.push(`<div class="ds-line"><span class="ds-tag">为什么现在</span><span class="ds-text">${escHtml(dr.why_now)}</span></div>`);
+    if (dr.approach) lines.push(`<div class="ds-line"><span class="ds-tag">做法</span><span class="ds-text">${escHtml(dr.approach)}</span></div>`);
+    if (dr.result) lines.push(`<div class="ds-line"><span class="ds-tag">结果</span><span class="ds-text">${escHtml(dr.result)}</span></div>`);
+    return lines.join("");
+  }
+
+  function buildLinks(url, pdf){
+    let s = "";
+    if (url) s += `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>`;
+    if (pdf) s += `<a class="link" href="${escHtml(pdf)}" target="_blank" rel="noopener">PDF</a>`;
+    return s;
+  }
+
+  function buildLesson(fl){
+    if (!fl.length) return "";
+    return `
       <details class="lesson">
         <summary>先补一课 · ${fl.length} 个概念可能需要补一下</summary>
         <div class="lesson-body">
@@ -478,23 +508,7 @@ button,select{ font:inherit; color:inherit; }
               ${f.compiler_link ? `<div class="lesson-link">与编译器的关系：${escHtml(f.compiler_link)}</div>` : ""}
             </div>`).join("")}
         </div>
-      </details>` : "";
-      return `
-        <div class="tldr"><span class="label">本文在说什么</span><div class="ds-sent">${lines.join("")}</div></div>
-        ${lesson}
-        <div class="links">
-          ${url ? `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>` : ""}
-          ${pdf ? `<a class="link" href="${escHtml(pdf)}" target="_blank" rel="noopener">PDF</a>` : ""}
-        </div>`;
-    }
-    // 没有深读数据的历史日期：优雅降级，照旧显示 TLDR / 为何推荐
-    return `
-      <div class="tldr"><span class="label">TLDR</span><p>${escHtml(r.tldr_zh || "（暂无摘要）")}</p></div>
-      ${r.why_care_zh ? `<div class="why"><span class="label">为何推荐</span><p>${escHtml(r.why_care_zh)}</p></div>` : ""}
-      <div class="links">
-        ${url ? `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>` : ""}
-        ${pdf ? `<a class="link" href="${escHtml(pdf)}" target="_blank" rel="noopener">PDF</a>` : ""}
-      </div>`;
+      </details>`;
   }
 
   function render(dir){

@@ -210,6 +210,11 @@ def build_prompt(title: str, authors: str, abstract: str, intro_text: str,
 - source：取 "full_text"（用到了正文）或 "abstract_only"（仅据摘要）。
 - first_lesson：最多 3 个用户可能不熟悉、又有助于理解本文的概念。每个为 {{concept, explain, compiler_link}}，explain 用 1-2 句简体中文，compiler_link 点明与编译器研究的关系。
 
+术语使用规则（严格遵守）：
+- 专业术语一律保留英文原文（如 scheduling language、bank conflict、superoptimization、tensor graph、lowering、tiling、fusion、covert channel、timing attack 等），绝不能只给中文译名。
+- 可在专业术语首次出现后括注很短的中文（如 "bank conflict（行地址冲突）"），或把英文术语包裹在中文句子里；其余叙述仍用简体中文。
+- 人名、系统名、数据集名、指标名保留原样，不翻译。
+
 概念选择规则（严格遵守）：
 - 只能从论文正文/摘要里出现的具体术语、技术或系统名中选（如 Triton、昇腾 NPU / Ascend 910B3、superoptimization、tensor graph、e-graph、等价饱和、backend lowering、fusion 等）。
 - 严禁选过于宽泛的大类词：AI/ML、AI 系统、编译器、计算机架构、计算机体系结构、机器学习、人工智能、深度学习、并行计算、量化等，以及 profile 中“半懂”一栏里的 Zotero 大类主题（AI 系统、AI/ML、编译器、计算机架构、材料/系统）。
