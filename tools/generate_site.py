@@ -300,9 +300,9 @@ button,select{ font:inherit; color:inherit; }
   /* 一行一篇：左 = 序号/标题/作者/相关度，右 = TLDR/为何推荐/链接；相邻行底色交替，铺到纸页右缘 */
   .entry{ display:grid; grid-template-columns:minmax(0,26rem) minmax(0,1fr); column-gap:3.2rem; align-items:start;
     padding:1.8rem 3rem 1.8rem 2.6rem; margin:0 -3rem 0 0; }
-  /* 桌面两栏：左 = 标题/作者/相关度 + 摘要按钮 + 先补一课；右 = 四句 */
-  .entry > .entry-head, .entry > h2, .entry > .byline, .entry > .rel, .entry > .links, .entry > .tldr, .entry > .why, .entry > details.lesson{ grid-column: 1; }
-  .entry > .four-sent{ grid-column: 2; grid-row: 1 / -1; align-self: start; }
+  /* 桌面两栏：左列容器（序号/标题/作者/相关度/按钮/先补一课）自然排列，右列只放四句，两者独立不互相拉伸 */
+  .entry > .entry-left{ grid-column: 1; }
+  .entry > .entry-right{ grid-column: 2; align-self: start; }
   .entry:nth-child(even){ background:var(--band); }
   .entry + .entry{ margin-top:0; padding-top:1.8rem; }
   .entry + .entry::before{ display:none; }
@@ -461,21 +461,23 @@ button,select{ font:inherit; color:inherit; }
         </article>`;
     }
 
+    const leftBody = [
+      `<div class="entry-head"><span class="no">№ ${no}</span></div>`,
+      `<h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>`,
+      `<p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>`,
+      dots(r.relevance),
+      `<div class="links">${buildLinks(url, pdf)}</div>`,
+      buildLesson(fl),
+    ].join("");
     const fourSent = `
       <div class="four-sent">
         <span class="label">本文在说什么</span>
         <div class="ds-sent">${buildFourSentLines(dr)}</div>
       </div>`;
-    const lesson = buildLesson(fl);
     return `
       <article class="entry">
-        <div class="entry-head"><span class="no">№ ${no}</span></div>
-        <h2>${url ? `<a href="${escHtml(url)}" target="_blank" rel="noopener">${title}</a>` : title}</h2>
-        <p class="byline">${escHtml(r.authors)}${cats || pub ? `<br>` : ""}${cats ? `<span class="cats">${cats}</span>` : ""}${cats && pub ? `<span class="sep">·</span>` : ""}${pub ? `发表 ${escHtml(pub)}` : ""}</p>
-        ${dots(r.relevance)}
-        ${fourSent}
-        <div class="links">${buildLinks(url, pdf)}</div>
-        ${lesson}
+        <div class="entry-left">${leftBody}</div>
+        <div class="entry-right">${fourSent}</div>
       </article>`;
   }
 
