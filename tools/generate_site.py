@@ -239,9 +239,10 @@ button,select{ font:inherit; color:inherit; }
   border:1px solid color-mix(in srgb,var(--lilac) 45%,transparent); color:var(--lilac-ink); transition:background .2s,border-color .2s; }
 .link:hover{ background:var(--lilac-wash); border-color:var(--lilac); }
 .link.main{ background:var(--lilac-wash); }
-  .ds-tag{ display:inline-block; font-size:.72rem; letter-spacing:.14em; color:var(--lilac-ink); }
-  .ds-sent{ margin:0 0 .5rem 0; font-size:.94rem; line-height:1.72; color:var(--ink); }
-  .ds-sent .ds-tag{ margin-right:.35rem; }
+  .ds-tag{ display:inline-block; flex:0 0 auto; width:6.2rem; font-size:.78rem; letter-spacing:.16em; color:var(--lilac-ink); font-weight:600; }
+  .ds-sent{ margin:0 0 .4rem 0; }
+  .ds-line{ display:flex; gap:.75rem; margin:0 0 .45rem 0; line-height:1.62; }
+  .ds-text{ flex:1; min-width:0; font-size:.94rem; line-height:1.62; color:var(--ink); overflow-wrap:break-word; }
   .lesson{ margin:1.1rem 0 0; border:1px solid var(--rule); border-radius:6px; background:var(--band); }
   .lesson summary{ padding:.55rem .8rem; font-size:.84rem; letter-spacing:.08em; color:var(--lilac-ink); cursor:pointer; outline:none; list-style:none; }
   .lesson summary::-webkit-details-marker{ display:none; }
@@ -297,7 +298,7 @@ button,select{ font:inherit; color:inherit; }
   .content{ align-self:stretch; border-left:1px solid var(--rule); padding:0; margin-top:.9rem; }
   .page{ padding-top:.4rem; }
   /* 一行一篇：左 = 序号/标题/作者/相关度，右 = TLDR/为何推荐/链接；相邻行底色交替，铺到纸页右缘 */
-  .entry{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); column-gap:3.2rem; align-items:start;
+  .entry{ display:grid; grid-template-columns:minmax(0,26rem) minmax(0,1fr); column-gap:3.2rem; align-items:start;
     padding:1.8rem 3rem 1.8rem 2.6rem; margin:0 -3rem 0 0; }
   .entry:nth-child(even){ background:var(--band); }
   .entry + .entry{ margin-top:0; padding-top:1.8rem; }
@@ -461,11 +462,11 @@ button,select{ font:inherit; color:inherit; }
     const fl = (dr.first_lesson || []).filter(Boolean);
     const url = safeUrl(r.url), pdf = safeUrl(r.pdf_url);
     if (hasDeep){
-      const four = [];
-      if (dr.problem) four.push(`<span class="ds-tag">问题</span>${escHtml(dr.problem)}`);
-      if (dr.why_now) four.push(`<span class="ds-tag">为什么现在</span>${escHtml(dr.why_now)}`);
-      if (dr.approach) four.push(`<span class="ds-tag">做法</span>${escHtml(dr.approach)}`);
-      if (dr.result) four.push(`<span class="ds-tag">结果</span>${escHtml(dr.result)}`);
+      const lines = [];
+      if (dr.problem) lines.push(`<div class="ds-line"><span class="ds-tag">问题</span><span class="ds-text">${escHtml(dr.problem)}</span></div>`);
+      if (dr.why_now) lines.push(`<div class="ds-line"><span class="ds-tag">为什么现在</span><span class="ds-text">${escHtml(dr.why_now)}</span></div>`);
+      if (dr.approach) lines.push(`<div class="ds-line"><span class="ds-tag">做法</span><span class="ds-text">${escHtml(dr.approach)}</span></div>`);
+      if (dr.result) lines.push(`<div class="ds-line"><span class="ds-tag">结果</span><span class="ds-text">${escHtml(dr.result)}</span></div>`);
       const lesson = fl.length ? `
       <details class="lesson">
         <summary>先补一课 · ${fl.length} 个概念可能需要补一下</summary>
@@ -479,7 +480,7 @@ button,select{ font:inherit; color:inherit; }
         </div>
       </details>` : "";
       return `
-        <div class="tldr"><span class="label">本文在说什么</span><p class="ds-sent">${four.join(" ")}</p></div>
+        <div class="tldr"><span class="label">本文在说什么</span><div class="ds-sent">${lines.join("")}</div></div>
         ${lesson}
         <div class="links">
           ${url ? `<a class="link main" href="${escHtml(url)}" target="_blank" rel="noopener">arXiv 摘要</a>` : ""}

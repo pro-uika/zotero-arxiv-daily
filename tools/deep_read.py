@@ -38,7 +38,16 @@ OFM_MODEL = "deepseek-v4.1-flash-free"
 CREDENTIALS = Path("/home/node/.dsh/.credentials.yaml")
 PROFILE_CHAR_LIMIT = 1500
 MAX_WORKERS = 2
-MAX_RETRIES = 3
+MAX_RETRIES = 6
+
+# 严禁作为“先补一课”概念的过宽泛大类词（含 profile 里“半懂”的 Zotero 大类主题）。
+# 只讲论文里出现的具体术语/技术，不讲这些大类。
+BROAD_TERMS = {
+    "ai/ml", "ai", "ml", "人工智能", "机器学习", "深度学习", "ai 系统", "ai系统",
+    "编译器", "计算机架构", "计算机体系结构", "体系结构", "并行计算", "量化",
+    "ai 系统（zotero：ai system）", "ai/ml（zotero：ai）", "编译器（zotero：compiler）",
+    "计算机架构（zotero：arch）", "材料/系统（zotero：material）",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -202,9 +211,10 @@ def build_prompt(title: str, authors: str, abstract: str, intro_text: str,
 - first_lesson：最多 3 个用户可能不熟悉、又有助于理解本文的概念。每个为 {{concept, explain, compiler_link}}，explain 用 1-2 句简体中文，compiler_link 点明与编译器研究的关系。
 
 概念选择规则（严格遵守）：
-- 只能从“半懂”或“不懂”名单里选，且必须与本文理解相关。
-- 不得选“熟”名单里的概念；不得重复“已讲过”名单里的概念。
-- explain 里术语保留英文，其余用简体中文。
+- 只能从论文正文/摘要里出现的具体术语、技术或系统名中选（如 Triton、昇腾 NPU / Ascend 910B3、superoptimization、tensor graph、e-graph、等价饱和、backend lowering、fusion 等）。
+- 严禁选过于宽泛的大类词：AI/ML、AI 系统、编译器、计算机架构、计算机体系结构、机器学习、人工智能、深度学习、并行计算、量化等，以及 profile 中“半懂”一栏里的 Zotero 大类主题（AI 系统、AI/ML、编译器、计算机架构、材料/系统）。
+- 不得选“熟”名单里的概念；不得重复“已讲过”名单里的概念。“熟”的不讲。
+- 每篇 2-3 个概念，每个 explain 用 1-2 句简体中文（术语保留英文），compiler_link 点明与编译器研究的关系。
 
 已知用户画像（按类别）：
 【熟】{profile['熟']}
@@ -230,6 +240,40 @@ def _extract_json(text: str) -> dict[str, Any] | None:
         return json.loads(text[start:end + 1])
     except json.JSONDecodeError:
         return None
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", "", s.strip().lower())
+
+
+def filter_concepts(lessons: list[dict[str, str]], profile: dict[str, str]) -> list[dict[str, str]]:
+    """过滤第一课概念：剔除宽泛大类、已讲过/熟的概念，保留 2-3 个具体术语。"""
+    taught = _norm(profile.get("已讲过", ""))
+    skilled = _norm(profile.get("熟", ""))
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in lessons:
+        concept = str(item.get("concept", "")).strip()
+        if not concept:
+            continue
+        key = _norm(concept)
+        if key in seen:
+            continue
+        # 剔除宽泛大类词
+        if any(term and term in key for term in BROAD_TERMS):
+            continue
+        # 剔除“熟”或“已讲过”里已有的概念（子串匹配，防止重复讲）
+        if key and (key in taught or key in skilled or any(t and t in key for t in taught.split("\n") if t) or any(t and t in key for t in skilled.split("\n") if t)):
+            continue
+        seen.add(key)
+        out.append({
+            "concept": concept,
+            "explain": str(item.get("explain", "")).strip(),
+            "compiler_link": str(item.get("compiler_link", "")).strip(),
+        })
+        if len(out) >= 3:
+            break
+    return out
 
 
 def llm_deep_read(api_key: str, title: str, authors: str, abstract: str,
@@ -261,25 +305,16 @@ def llm_deep_read(api_key: str, title: str, authors: str, abstract: str,
             if result is None:
                 raise ValueError("LLM 返回未含有效 JSON")
             result["source"] = source
-            # 规范 first_lesson
+            # 规范 first_lesson：过滤宽泛大类与重复/熟概念，保留 2-3 个具体术语
             fl = result.get("first_lesson") or []
             if not isinstance(fl, list):
                 fl = []
-            clean = []
-            for item in fl[:3]:
-                if not isinstance(item, dict):
-                    continue
-                clean.append({
-                    "concept": str(item.get("concept", "")).strip(),
-                    "explain": str(item.get("explain", "")).strip(),
-                    "compiler_link": str(item.get("compiler_link", "")).strip(),
-                })
-            result["first_lesson"] = clean
+            result["first_lesson"] = filter_concepts(fl, profile)
             return result
         except Exception as exc:
             last_err = str(exc)
             if attempt < MAX_RETRIES:
-                time.sleep(2 * attempt)
+                time.sleep(5 * attempt)
     print(f"[deep_read] LLM 失败（{title}）：{last_err}")
     return None
 
@@ -305,13 +340,13 @@ def process_paper(api_key: str, rec: dict[str, Any], profile: dict[str, str]) ->
     return result, taught
 
 
-def process_file(path: Path, api_key: str, profile: dict[str, str]) -> dict[str, Any]:
+def process_file(path: Path, api_key: str, profile: dict[str, str], force: bool = False) -> dict[str, Any]:
     record = json.loads(path.read_text(encoding="utf-8"))
     recs = record.get("recommendations") or []
     taught_all: list[str] = []
 
     def work(rec):
-        if rec.get("deep_read"):
+        if rec.get("deep_read") and not force:
             return rec, []
         result, taught = process_paper(api_key, rec, profile)
         if result is not None:
@@ -339,6 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     profile = load_profile()
 
     files: list[Path] = []
+    force = "--force" in argv
     if "--all" in argv:
         files = sorted(DAILY_DIR.glob("*.json"))
         if not files:
@@ -348,7 +384,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         files = [Path(p) for p in argv if p.endswith(".json")]
     if not files:
-        print("用法：python tools/deep_read.py data/daily/2026-11-17.json ...  (或 --all)")
+        print("用法：python tools/deep_read.py data/daily/2026-11-17.json ...  (或 --all，加 --force 强制重生成)")
         return 1
 
     summary = []
@@ -356,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
         if not f.exists():
             print(f"[跳过] 不存在：{f}")
             continue
-        res = process_file(f, api_key, profile)
+        res = process_file(f, api_key, profile, force=force)
         summary.append(res)
         print(f"[deep_read] {res['file']}：{res['n']} 篇，新讲过概念：{res['taught']}")
 
