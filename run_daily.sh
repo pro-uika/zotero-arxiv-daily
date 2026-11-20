@@ -45,7 +45,8 @@ PY
 )"
 fi
 export OPENAI_API_BASE="${OPENAI_API_BASE:-http://127.0.0.1:18900/v1}"
-export OPENAI_API_MODEL="${OPENAI_API_MODEL:-deepseek-v4.1-flash-free}"
+# 与 config/custom.yaml 保持一致：OFM 降级链 combo:deepread，仅环境变量可覆盖
+export OPENAI_API_MODEL="${OPENAI_API_MODEL:-combo:deepread}"
 
 if [[ -z "${ZOTERO_ID:-}" || -z "${ZOTERO_KEY:-}" || -z "${OPENAI_API_KEY:-}" ]]; then
   echo "缺少凭据：请先设置 ZOTERO_ID/ZOTERO_KEY（$SECRETS_ENV）和 OPENAI_API_KEY（$CREDENTIALS 中的 OFM_API_KEY）" >&2
