@@ -41,7 +41,7 @@ DEFAULT_PROFILE = REPO / "knowledge" / "profile.md"
 DAILY_DIR = REPO / "data" / "daily"
 
 OFM_BASE_URL = "http://127.0.0.1:18900/v1"
-OFM_MODEL = "deepseek-v4.1-flash-free"
+OFM_MODEL = "combo:deepread"
 CREDENTIALS = Path("/home/node/.dsh/.credentials.yaml")
 PROFILE_CHAR_LIMIT = 1500
 MAX_WORKERS = 2

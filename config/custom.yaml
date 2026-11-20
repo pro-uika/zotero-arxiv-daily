@@ -17,7 +17,7 @@ llm:
     base_url: ${oc.env:OPENAI_API_BASE,https://api.deepseek.com}
   api_mode: chat_completion
   generation_kwargs:
-    model: deepseek-flash
+    model: combo:deepread
     max_tokens: 16384
 
 source:
